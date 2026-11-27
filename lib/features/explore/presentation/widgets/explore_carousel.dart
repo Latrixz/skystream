@@ -48,8 +48,126 @@ class ExploreCarousel extends ConsumerStatefulWidget {
     this.onControllerReady,
   });
 
+  /// Tests: the image a poster-only slide reads its shape from, in place of
+  /// the network one.
+  @visibleForTesting
+  static ImageProvider Function(MultimediaItem movie)? debugPosterProbe;
+
   @override
   ConsumerState<ExploreCarousel> createState() => _ExploreCarouselState();
+}
+
+/// The shape of a poster-only item's poster, once its image has decoded.
+enum _PosterShape { unknown, portrait, landscape }
+
+/// Width over height of the posters [_PosterShapeProbe] has decoded, by URL,
+/// so a revisit or a swipe back lays its slide out right from the first frame.
+@visibleForTesting
+abstract final class PosterAspectCache {
+  static const int _capacity = 256;
+
+  // Insertion-ordered: the first key is the least recently stored.
+  static final Map<String, double> _aspects = {};
+
+  static double? lookup(String url) => _aspects[url];
+
+  static void store(String url, double aspect) {
+    _aspects.remove(url);
+    _aspects[url] = aspect;
+    if (_aspects.length > _capacity) _aspects.remove(_aspects.keys.first);
+  }
+
+  static void clear() => _aspects.clear();
+}
+
+/// Builds a poster-only slide for its poster's [_PosterShape]: [image]'s
+/// first frame gives the size, recorded in [PosterAspectCache] under [url].
+/// [_PosterShape.unknown] while it loads, and if it fails.
+class _PosterShapeProbe extends StatefulWidget {
+  const _PosterShapeProbe({
+    required this.url,
+    required this.image,
+    required this.builder,
+  });
+
+  final String url;
+  final ImageProvider image;
+  final Widget Function(BuildContext context, _PosterShape shape) builder;
+
+  @override
+  State<_PosterShapeProbe> createState() => _PosterShapeProbeState();
+}
+
+class _PosterShapeProbeState extends State<_PosterShapeProbe> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  _PosterShape _shape = _PosterShape.unknown;
+
+  static _PosterShape _shapeOf(double aspect) =>
+      aspect >= _ExploreCarouselState._landscapeMinAspect
+      ? _PosterShape.landscape
+      : _PosterShape.portrait;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_PosterShapeProbe oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url || oldWidget.image != widget.image) {
+      _resolve();
+    }
+  }
+
+  void _resolve() {
+    final known = PosterAspectCache.lookup(widget.url);
+    if (known != null) {
+      _stopListening();
+      _shape = _shapeOf(known);
+      return;
+    }
+    final stream = widget.image.resolve(createLocalImageConfiguration(context));
+    if (_listener != null && stream.key == _stream?.key) return;
+    _stopListening();
+    _shape = _PosterShape.unknown;
+    _stream = stream;
+    _listener = ImageStreamListener(
+      _onImage,
+      // The slide's own images show the failure; the probe just stays unsure.
+      onError: (_, _) => _stopListening(),
+    );
+    stream.addListener(_listener!);
+  }
+
+  void _onImage(ImageInfo info, bool synchronousCall) {
+    final image = info.image;
+    final aspect = image.height > 0 ? image.width / image.height : 0.0;
+    info.dispose();
+    _stopListening();
+    if (aspect <= 0) return;
+    PosterAspectCache.store(widget.url, aspect);
+    if (!mounted) return;
+    setState(() => _shape = _shapeOf(aspect));
+  }
+
+  void _stopListening() {
+    final listener = _listener;
+    if (listener != null) _stream?.removeListener(listener);
+    _stream = null;
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _stopListening();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _shape);
 }
 
 // Intents used by the carousel's keyboard shortcuts. Defined at file scope so
@@ -554,16 +672,10 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
     required Color scaffoldColor,
     required ThemeData theme,
   }) {
-    final imageUrl = movie.backdropImageUrl;
-    final title = movie.title;
-
-    const bleed = 60.0;
-
-    if (_isPortraitOnly(movie)) {
-      return _buildPortraitSlide(
+    if (!_isPosterOnly(movie)) {
+      return _buildBannerSlide(
         context: context,
         movie: movie,
-        height: height,
         isDesktop: isDesktop,
         parallaxOffset: parallaxOffset,
         contentOffset: contentOffset,
@@ -572,6 +684,65 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
         theme: theme,
       );
     }
+
+    // A poster and no banner: the poster's own shape picks the layout. Some
+    // plugins' horizontal home rows hand landscape stills in as posters, and
+    // those want the full-bleed banner, not the framed portrait one.
+    return _PosterShapeProbe(
+      url: movie.posterUrl,
+      image:
+          ExploreCarousel.debugPosterProbe?.call(movie) ??
+          _ambienceImage(movie),
+      builder: (context, shape) => switch (shape) {
+        _PosterShape.landscape => _buildBannerSlide(
+          context: context,
+          movie: movie,
+          isDesktop: isDesktop,
+          parallaxOffset: parallaxOffset,
+          contentOffset: contentOffset,
+          opacity: opacity,
+          scaffoldColor: scaffoldColor,
+          theme: theme,
+          // The blurred decode is already in memory: the sharp one fades in
+          // over it rather than over a flat placeholder.
+          placeholder: _buildAmbience(movie, theme),
+        ),
+        _PosterShape.portrait || _PosterShape.unknown => _buildPortraitSlide(
+          context: context,
+          movie: movie,
+          height: height,
+          isDesktop: isDesktop,
+          parallaxOffset: parallaxOffset,
+          contentOffset: contentOffset,
+          opacity: opacity,
+          scaffoldColor: scaffoldColor,
+          theme: theme,
+          // Until the shape is known, the ambience alone: a framed poster
+          // that turns out to be landscape would flash in and out.
+          showPoster: shape == _PosterShape.portrait,
+        ),
+      },
+    );
+  }
+
+  /// The full-width backdrop slide: [MultimediaItem.backdropImageUrl] (the
+  /// banner, else the poster) covering the hero. [placeholder] stands in
+  /// while it loads; a flat surface by default.
+  Widget _buildBannerSlide({
+    required BuildContext context,
+    required MultimediaItem movie,
+    required bool isDesktop,
+    required double parallaxOffset,
+    required double contentOffset,
+    required double opacity,
+    required Color scaffoldColor,
+    required ThemeData theme,
+    Widget? placeholder,
+  }) {
+    final imageUrl = movie.backdropImageUrl;
+    final title = movie.title;
+
+    const bleed = 60.0;
 
     return ClipRect(
       child: Stack(
@@ -606,6 +777,7 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
                   sourceAspectRatio: ImageUtils.backdropAspectRatio,
                 ),
                 placeholder: (context, url) =>
+                    placeholder ??
                     Container(color: theme.colorScheme.surfaceContainerHighest),
                 errorWidget: (_, _, _) =>
                     ThumbnailErrorPlaceholder(label: title, isBackdrop: true),
@@ -717,19 +889,57 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
   /// Blur radius of that ambience, in logical pixels.
   static const double _ambienceBlurSigma = 28;
 
+  /// Posters at least this much wider than tall get the full-bleed banner
+  /// rather than the framed portrait layout.
+  static const double _landscapeMinAspect = 1.2;
+
   /// An item with a poster and no banner: plugin home items (CloudStream's
   /// SearchResponse has no backdrop field) and the odd TMDB title without a
   /// backdrop. Stretching a portrait poster across the wide hero both
-  /// pixelates and crops it, so these slides get [_buildPortraitSlide].
-  static bool _isPortraitOnly(MultimediaItem movie) {
+  /// pixelates and crops it, so these slides go through [_PosterShapeProbe].
+  static bool _isPosterOnly(MultimediaItem movie) {
     final banner = movie.bannerUrl?.trim() ?? '';
     return banner.isEmpty && movie.posterUrl.trim().isNotEmpty;
   }
 
-  /// The slide for a [_isPortraitOnly] item: the poster, blurred and darkened,
-  /// fills the hero as ambience, and the poster itself sits sharp at its own
-  /// aspect ratio — to the right of the text on the wide layout, above the
-  /// centred text on the narrow one.
+  /// The ambience's image, exactly as its [CachedNetworkImage] builds it, so
+  /// the shape probe shares that image's download and decode.
+  static ImageProvider _ambienceImage(MultimediaItem movie) =>
+      ResizeImage.resizeIfNeeded(
+        _ambienceDecodeWidth,
+        null,
+        CachedNetworkImageProvider(movie.posterUrl, headers: movie.headers),
+      );
+
+  /// The poster, blurred: the backdrop of a portrait slide, and what a
+  /// landscape poster's banner fades in over.
+  Widget _buildAmbience(MultimediaItem movie, ThemeData theme) {
+    return RepaintBoundary(
+      child: ImageFiltered(
+        key: const ValueKey('portrait-banner-ambience'),
+        imageFilter: ImageFilter.blur(
+          sigmaX: _ambienceBlurSigma,
+          sigmaY: _ambienceBlurSigma,
+        ),
+        child: CachedNetworkImage(
+          imageUrl: movie.posterUrl,
+          httpHeaders: movie.headers,
+          fit: BoxFit.cover,
+          memCacheWidth: _ambienceDecodeWidth,
+          placeholder: (context, url) =>
+              Container(color: theme.colorScheme.surfaceContainerHighest),
+          errorWidget: (context, url, error) =>
+              Container(color: theme.colorScheme.surfaceContainerHighest),
+        ),
+      ),
+    );
+  }
+
+  /// The slide for a portrait (or square) poster-only item: the poster,
+  /// blurred and darkened, fills the hero as ambience, and the poster itself
+  /// sits sharp at its own aspect ratio — to the right of the text on the
+  /// wide layout, above the centred text on the narrow one. Without
+  /// [showPoster], the ambience and the text alone.
   Widget _buildPortraitSlide({
     required BuildContext context,
     required MultimediaItem movie,
@@ -740,9 +950,9 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
     required double opacity,
     required Color scaffoldColor,
     required ThemeData theme,
+    required bool showPoster,
   }) {
     const bleed = 60.0;
-    final posterUrl = movie.posterUrl;
 
     Widget fade(Widget child) =>
         opacity >= 0.999 ? child : Opacity(opacity: opacity, child: child);
@@ -764,27 +974,7 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
             bottom: -bleed - parallaxOffset,
             left: 0,
             right: 0,
-            child: RepaintBoundary(
-              child: ImageFiltered(
-                key: const ValueKey('portrait-banner-ambience'),
-                imageFilter: ImageFilter.blur(
-                  sigmaX: _ambienceBlurSigma,
-                  sigmaY: _ambienceBlurSigma,
-                ),
-                child: CachedNetworkImage(
-                  imageUrl: posterUrl,
-                  httpHeaders: movie.headers,
-                  fit: BoxFit.cover,
-                  memCacheWidth: _ambienceDecodeWidth,
-                  placeholder: (context, url) => Container(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                  ),
-                ),
-              ),
-            ),
+            child: _buildAmbience(movie, theme),
           ),
 
           // 2. Parallax Gradients, over a flat dim: unlike a backdrop, the
@@ -824,15 +1014,17 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
                           child: content,
                         ),
                       ),
-                      const SizedBox(width: 32),
-                      LayoutBuilder(
-                        builder: (context, constraints) => _buildSharpPoster(
-                          context,
-                          movie,
-                          height: constraints.maxHeight,
-                          maxWidth: constraints.maxHeight,
+                      if (showPoster) ...[
+                        const SizedBox(width: 32),
+                        LayoutBuilder(
+                          builder: (context, constraints) => _buildSharpPoster(
+                            context,
+                            movie,
+                            height: constraints.maxHeight,
+                            maxWidth: constraints.maxHeight,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -855,7 +1047,7 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
                         children: [
                           // A landscape phone leaves no room above the text;
                           // the ambience alone still beats a stretched poster.
-                          if (posterHeight >= 140) ...[
+                          if (showPoster && posterHeight >= 140) ...[
                             _buildSharpPoster(
                               context,
                               movie,
