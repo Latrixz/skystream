@@ -2441,4 +2441,32 @@ class AppLocalizationsKn extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'ಲೈವ್‌ಗಿಂತ $time ಹಿಂದೆ';
   }
+
+  @override
+  String get categories => 'ವರ್ಗಗಳು';
+
+  @override
+  String categorySearchHint(String category) {
+    return '$category ನಲ್ಲಿ ಹುಡುಕಿ';
+  }
+
+  @override
+  String get categorySort => 'ವಿಂಗಡಿಸು';
+
+  @override
+  String get categoryReset => 'ಮರುಹೊಂದಿಸಿ';
+
+  @override
+  String get categoryEmpty => 'ಇಲ್ಲಿ ಇನ್ನೂ ಏನೂ ಇಲ್ಲ';
+
+  @override
+  String get categoryEmptyHint =>
+      'ಬೇರೆ ಫಿಲ್ಟರ್‌ಗಳು ಅಥವಾ ಬೇರೆ ಹುಡುಕಾಟ ಪ್ರಯತ್ನಿಸಿ.';
+
+  @override
+  String get categoryLoadFailed => 'ಈ ವರ್ಗವನ್ನು ಲೋಡ್ ಮಾಡಲಾಗಲಿಲ್ಲ';
+
+  @override
+  String get categoryLoadMoreFailed =>
+      'ಇನ್ನಷ್ಟು ಶೀರ್ಷಿಕೆಗಳನ್ನು ಲೋಡ್ ಮಾಡಲಾಗಲಿಲ್ಲ';
 }

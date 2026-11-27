@@ -135,6 +135,53 @@ class CloudStreamProvider extends SkyStreamProvider {
     return home;
   }
 
+  /// The extension's categories, once they came: they don't change while it's loaded.
+  Future<List<ProviderCategory>>? _categories;
+
+  @override
+  Future<List<ProviderCategory>> getCategories() {
+    return _categories ??= _loadCategories().then(
+      (categories) => categories,
+      onError: (Object error) {
+        // Asked again next time: a failure (offline, say) isn't the extension having none.
+        _categories = null;
+        talker.warning('[CloudStream] $name categories failed: $error');
+        return const <ProviderCategory>[];
+      },
+    );
+  }
+
+  Future<List<ProviderCategory>> _loadCategories() async {
+    final result = await _call((e) => e.categories(name, plugin: _pluginPath), kind: 'categories');
+    return [
+      for (final category in _list(result['categories']))
+        if (ProviderCategory.fromJson(category) case final parsed when parsed.id.isNotEmpty && parsed.name.isNotEmpty)
+          parsed,
+    ];
+  }
+
+  @override
+  Future<CategoryPage> getCategoryPage(
+    ProviderCategory category,
+    Map<String, String> filters,
+    String query,
+    int page,
+  ) async {
+    try {
+      final result = await _call(
+        (e) => e.categoryPage(name, category.id, filters: filters, query: query, page: page, plugin: _pluginPath),
+        kind: 'categoryPage',
+      );
+      return CategoryPage(
+        items: [for (final item in _list(result['items'])) _item(item)],
+        hasNext: result['hasNext'] == true,
+      );
+    } catch (error) {
+      talker.warning('[CloudStream] $name category ${category.id} page $page failed: $error');
+      rethrow;
+    }
+  }
+
   @override
   Future<MultimediaItem> getDetails(String url) async {
     final result = await _call((e) => e.load(name, url, plugin: _pluginPath), kind: 'load');

@@ -2428,4 +2428,30 @@ class AppLocalizationsHi extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'लाइव से $time पीछे';
   }
+
+  @override
+  String get categories => 'श्रेणियाँ';
+
+  @override
+  String categorySearchHint(String category) {
+    return '$category में खोजें';
+  }
+
+  @override
+  String get categorySort => 'क्रम';
+
+  @override
+  String get categoryReset => 'रीसेट करें';
+
+  @override
+  String get categoryEmpty => 'यहाँ अभी कुछ नहीं है';
+
+  @override
+  String get categoryEmptyHint => 'दूसरे फ़िल्टर या दूसरी खोज आज़माएँ।';
+
+  @override
+  String get categoryLoadFailed => 'यह श्रेणी लोड नहीं हो सकी';
+
+  @override
+  String get categoryLoadMoreFailed => 'और शीर्षक लोड नहीं हो सके';
 }

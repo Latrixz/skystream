@@ -2382,6 +2382,32 @@ class AppLocalizationsZh extends AppLocalizations {
   String playerBehindLive(String time) {
     return '落后直播 $time';
   }
+
+  @override
+  String get categories => '分类';
+
+  @override
+  String categorySearchHint(String category) {
+    return '搜索$category';
+  }
+
+  @override
+  String get categorySort => '排序';
+
+  @override
+  String get categoryReset => '重置';
+
+  @override
+  String get categoryEmpty => '这里还没有内容';
+
+  @override
+  String get categoryEmptyHint => '换个筛选条件或搜索词试试。';
+
+  @override
+  String get categoryLoadFailed => '无法加载此分类';
+
+  @override
+  String get categoryLoadMoreFailed => '无法加载更多内容';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).

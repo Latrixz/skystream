@@ -54,6 +54,8 @@ import java.util.concurrent.TimeoutException
  * openPopups{path} (the extension's kept pop-ups as a screen, as its Support button opens them).
  * setLanguage{language} (the app's language: extensions' resources loaded from then on use it).
  * loadPlugin's and reloadPlugin's answers carry hasSettings.
+ * categories{provider} and categoryPage{provider, category, filters?, query?, page?}: browsing a provider's
+ * categories (see [CategoryCalls] for the contract with extensions).
  * loadPlugin's url is where the extension was downloaded from; extensions can look it up.
  * Provider calls also take plugin? (the extension's path) to tell same-named providers apart.
  * loadLinks's answer: links, subtitles, completed, error, and fullScreen: true when it ended with a full-screen window of
@@ -146,6 +148,9 @@ class Engine(
         NewPipeDownloader.install()
         // CloudStream's app names its id keys at startup too; extensions' addMalId and the like write under them.
         Mappers.nameSyncKeys()
+        // Tells extensions that the app shows their categories itself (see [CategoryCalls]), so they can leave
+        // out their own ways in (a home row of category cards, a page of their own).
+        System.setProperty(CategoryCalls.PROPERTY, "true")
         // Bot checks: the app's browser clears them, and its clearances go with every request on
         // CloudStream's shared clients.
         HostHooks.webView = RemoteWebViewHost
@@ -225,6 +230,19 @@ class Engine(
         "search" -> timed {
             val api = provider(params)
             ui.call(pluginFile(api)) { search(api, params.text("query"), params.int("page", 1)) }
+        }
+        "categories" -> timed {
+            val api = provider(params)
+            ui.call(pluginFile(api)) { pluginCall(CALL_TIMEOUT_MS) { CategoryCalls.categories(api) } }
+        }
+        "categoryPage" -> timed {
+            val api = provider(params)
+            val filters = params.get("filters")?.takeIf { it.isObject } ?: Json.mapper.createObjectNode()
+            ui.call(pluginFile(api)) {
+                pluginCall(CALL_TIMEOUT_MS) {
+                    CategoryCalls.page(api, params.text("category"), filters, params.optText("query").orEmpty(), params.int("page", 1))
+                }
+            }
         }
         "load" -> timed {
             val api = provider(params)

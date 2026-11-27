@@ -1877,5 +1877,21 @@
   "@devQoeLog": {"description": "Developer options: the switch that writes playback-quality (QoE) events to the app log. \"QoE\" stays as it is."},
   "@devQoeLogSubtitle": {"description": "Developer options: the line under the QoE log switch."},
   "@playerGoLive": {"description": "Player, live stream: the button that jumps back to the live edge."},
-  "@playerBehindLive": {"description": "Player, live stream: spoken label for how far behind the live edge playback is, such as \"0:42 behind live\".", "placeholders": {"time": {"type": "String", "example": "0:42"}}}
+  "@playerBehindLive": {"description": "Player, live stream: spoken label for how far behind the live edge playback is, such as \"0:42 behind live\".", "placeholders": {"time": {"type": "String", "example": "0:42"}}},
+  "categories": "Categories",
+  "@categories": {"description": "Home: the heading over the active provider's category chips."},
+  "categorySearchHint": "Search {category}",
+  "@categorySearchHint": {"description": "Category screen: the hint in the search field that searches within the category, such as \"Search Movies\".", "placeholders": {"category": {"type": "String", "example": "Movies"}}},
+  "categorySort": "Sort",
+  "@categorySort": {"description": "Category screen: the title of the picker for the order titles are listed in."},
+  "categoryReset": "Reset",
+  "@categoryReset": {"description": "Category screen: the chip that puts every filter and the sort back to their defaults."},
+  "categoryEmpty": "Nothing here yet",
+  "@categoryEmpty": {"description": "Category screen: the heading when the category has no titles for the chosen filters or search."},
+  "categoryEmptyHint": "Try other filters or another search.",
+  "@categoryEmptyHint": {"description": "Category screen: the line under the empty heading."},
+  "categoryLoadFailed": "Couldn't load this category",
+  "@categoryLoadFailed": {"description": "Category screen: the heading when its titles failed to load; a Retry button follows."},
+  "categoryLoadMoreFailed": "Couldn't load more titles",
+  "@categoryLoadMoreFailed": {"description": "Category screen: shown at the end of the grid when the next page failed; a Retry button follows."}
 }

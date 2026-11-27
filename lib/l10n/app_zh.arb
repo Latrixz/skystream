@@ -643,5 +643,13 @@
   "devQoeLog": "QoE 日志",
   "devQoeLogSubtitle": "将播放时间写入应用日志",
   "playerGoLive": "前往直播",
-  "playerBehindLive": "落后直播 {time}"
+  "playerBehindLive": "落后直播 {time}",
+  "categories": "分类",
+  "categorySearchHint": "搜索{category}",
+  "categorySort": "排序",
+  "categoryReset": "重置",
+  "categoryEmpty": "这里还没有内容",
+  "categoryEmptyHint": "换个筛选条件或搜索词试试。",
+  "categoryLoadFailed": "无法加载此分类",
+  "categoryLoadMoreFailed": "无法加载更多内容"
 }

@@ -77,6 +77,29 @@ class Cs3Engine {
   Future<Map<String, dynamic>> search(String provider, String query, {int page = 1, String? plugin}) =>
       call('search', {'provider': provider, 'query': query, 'page': page, 'plugin': ?plugin});
 
+  /// The provider's categories: `{supported, categories: [{id, name, filters: [{key, name, options: [{value,
+  /// label}]}], sorts: [{value, label}]}]}`. `supported` is false for an extension without them.
+  Future<Map<String, dynamic>> categories(String provider, {String? plugin}) =>
+      call('categories', {'provider': provider, 'plugin': ?plugin});
+
+  /// Page [page] of [category]'s titles: `{items, hasNext}`, items as [search]'s. [filters] are the chosen
+  /// options by filter key, and the sort under `sort`; [query] searches within the category.
+  Future<Map<String, dynamic>> categoryPage(
+    String provider,
+    String category, {
+    Map<String, String> filters = const {},
+    String query = '',
+    int page = 1,
+    String? plugin,
+  }) => call('categoryPage', {
+    'provider': provider,
+    'category': category,
+    'filters': filters,
+    'query': query,
+    'page': page,
+    'plugin': ?plugin,
+  });
+
   Future<Map<String, dynamic>> load(String provider, String url, {String? plugin}) =>
       call('load', {'provider': provider, 'url': url, 'plugin': ?plugin});
 

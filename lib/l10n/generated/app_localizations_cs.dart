@@ -2432,4 +2432,30 @@ class AppLocalizationsCs extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time za živým vysíláním';
   }
+
+  @override
+  String get categories => 'Categories';
+
+  @override
+  String categorySearchHint(String category) {
+    return 'Search $category';
+  }
+
+  @override
+  String get categorySort => 'Sort';
+
+  @override
+  String get categoryReset => 'Reset';
+
+  @override
+  String get categoryEmpty => 'Nothing here yet';
+
+  @override
+  String get categoryEmptyHint => 'Try other filters or another search.';
+
+  @override
+  String get categoryLoadFailed => 'Couldn\'t load this category';
+
+  @override
+  String get categoryLoadMoreFailed => 'Couldn\'t load more titles';
 }

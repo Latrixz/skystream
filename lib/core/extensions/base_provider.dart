@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
 import '../domain/entity/multimedia_item.dart';
+import 'provider_category.dart';
+
+export 'provider_category.dart';
 
 enum ProviderType { movie, series, anime, livestream, other }
 
@@ -34,6 +37,21 @@ abstract class SkyStreamProvider {
 
   // Returns list of video streams (urls)
   Future<List<StreamResult>> loadStreams(String url);
+
+  /// The sections of this provider's catalogue it can be browsed by, each
+  /// with its filters and sorts, for home's category chips. Empty when it has
+  /// none.
+  Future<List<ProviderCategory>> getCategories() async => const [];
+
+  /// Page [page] (1-based) of [category]'s titles: [filters] holds the option
+  /// chosen per filter key, and the sort under [ProviderCategory.sortKey],
+  /// unset ones left out; [query] searches within the category ('' for none).
+  Future<CategoryPage> getCategoryPage(
+    ProviderCategory category,
+    Map<String, String> filters,
+    String query,
+    int page,
+  ) async => CategoryPage.empty;
 }
 
 /// A provider's own full-screen screen (a game an extension opens on Play) took the person's Play and left nothing to

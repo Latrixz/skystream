@@ -88,6 +88,17 @@ class _Active implements SkyStreamProvider {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+
+  @override
+  Future<List<ProviderCategory>> getCategories() async => const [];
+
+  @override
+  Future<CategoryPage> getCategoryPage(
+    ProviderCategory category,
+    Map<String, String> filters,
+    String query,
+    int page,
+  ) async => CategoryPage.empty;
 }
 
 MultimediaItem _show({String? addonUrl = _bridgeUrl}) => MultimediaItem(

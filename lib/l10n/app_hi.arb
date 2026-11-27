@@ -659,5 +659,13 @@
   "devQoeLog": "QoE लॉग",
   "devQoeLogSubtitle": "प्लेबैक के समय ऐप लॉग में लिखता है",
   "playerGoLive": "लाइव पर जाएँ",
-  "playerBehindLive": "लाइव से {time} पीछे"
+  "playerBehindLive": "लाइव से {time} पीछे",
+  "categories": "श्रेणियाँ",
+  "categorySearchHint": "{category} में खोजें",
+  "categorySort": "क्रम",
+  "categoryReset": "रीसेट करें",
+  "categoryEmpty": "यहाँ अभी कुछ नहीं है",
+  "categoryEmptyHint": "दूसरे फ़िल्टर या दूसरी खोज आज़माएँ।",
+  "categoryLoadFailed": "यह श्रेणी लोड नहीं हो सकी",
+  "categoryLoadMoreFailed": "और शीर्षक लोड नहीं हो सके"
 }

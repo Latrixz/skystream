@@ -77,6 +77,17 @@ class FakePlugin implements SkyStreamProvider {
   @override
   Future<MultimediaItem> getDetails(String url) async =>
       throw UnimplementedError();
+
+  @override
+  Future<List<ProviderCategory>> getCategories() async => const [];
+
+  @override
+  Future<CategoryPage> getCategoryPage(
+    ProviderCategory category,
+    Map<String, String> filters,
+    String query,
+    int page,
+  ) async => CategoryPage.empty;
 }
 
 /// A provider whose links went to its own full-screen screen (a game).

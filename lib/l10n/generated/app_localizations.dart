@@ -4247,6 +4247,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{time} behind live'**
   String playerBehindLive(String time);
+
+  /// Home: the heading over the active provider's category chips.
+  ///
+  /// In en, this message translates to:
+  /// **'Categories'**
+  String get categories;
+
+  /// Category screen: the hint in the search field that searches within the category, such as "Search Movies".
+  ///
+  /// In en, this message translates to:
+  /// **'Search {category}'**
+  String categorySearchHint(String category);
+
+  /// Category screen: the title of the picker for the order titles are listed in.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort'**
+  String get categorySort;
+
+  /// Category screen: the chip that puts every filter and the sort back to their defaults.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get categoryReset;
+
+  /// Category screen: the heading when the category has no titles for the chosen filters or search.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here yet'**
+  String get categoryEmpty;
+
+  /// Category screen: the line under the empty heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Try other filters or another search.'**
+  String get categoryEmptyHint;
+
+  /// Category screen: the heading when its titles failed to load; a Retry button follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load this category'**
+  String get categoryLoadFailed;
+
+  /// Category screen: shown at the end of the grid when the next page failed; a Retry button follows.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load more titles'**
+  String get categoryLoadMoreFailed;
 }
 
 class _AppLocalizationsDelegate

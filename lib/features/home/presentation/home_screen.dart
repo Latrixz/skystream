@@ -9,6 +9,7 @@ import 'home_state.dart';
 import 'widgets/home_check_card.dart';
 
 import 'package:skystream/features/home/presentation/widgets/continue_watching_section.dart';
+import 'package:skystream/features/categories/presentation/home_categories_row.dart';
 import 'package:skystream/features/search/presentation/search_provider.dart';
 import 'package:skystream/features/tracking/data/sync_manager.dart';
 import 'package:skystream/features/tracking/domain/sync_progress_item.dart';
@@ -392,6 +393,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
                     items: history.cast<HistoryItem>(),
                   ),
                 ),
+
+              // The provider's categories, as chips, when it has any.
+              const SliverToBoxAdapter(child: HomeCategoriesRow()),
 
               if (syncedProgressAsync.asData?.value.isNotEmpty == true)
                 SliverToBoxAdapter(

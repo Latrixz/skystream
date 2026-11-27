@@ -21,7 +21,9 @@ import '../../features/settings/presentation/developer_options_screen.dart';
 import '../../features/details/presentation/details_screen.dart';
 import '../../features/details/presentation/tmdb_movie_details_screen.dart';
 import '../../features/explore/presentation/view_all_screen.dart';
+import '../../features/categories/presentation/category_screen.dart';
 import '../domain/entity/multimedia_item.dart';
+import '../extensions/provider_category.dart';
 import 'package:skystream/shared/widgets/app_scaffold.dart';
 import '../../core/storage/settings_repository.dart';
 import 'package:talker_flutter/talker_flutter.dart';
@@ -241,6 +243,13 @@ class ViewAllRouteExtra {
   final void Function(MultimediaItem item)? onTap;
 }
 
+class CategoryRouteExtra {
+  const CategoryRouteExtra({required this.category});
+
+  /// One of the active provider's categories.
+  final ProviderCategory category;
+}
+
 // --- Route Extra Codec ---
 
 /// Serializes/deserializes route extras so Android can restore routes after
@@ -277,6 +286,12 @@ class _RouteExtraEncoder extends Converter<Object?, Object?> {
         if (input.preloadedStreams != null)
           'preloadedStreams':
               input.preloadedStreams!.map((s) => s.toJson()).toList(),
+      };
+    }
+    if (input is CategoryRouteExtra) {
+      return <String, dynamic>{
+        '_type': 'CategoryRouteExtra',
+        'category': input.category.toJson(),
       };
     }
     if (input is ViewAllRouteExtra) {
@@ -329,6 +344,12 @@ class _RouteExtraDecoder extends Converter<Object?, Object?> {
                     )
                     .toList()
               : null,
+        );
+      case 'CategoryRouteExtra':
+        return CategoryRouteExtra(
+          category: ProviderCategory.fromJson(
+            Map<String, dynamic>.from(map['category'] as Map),
+          ),
         );
       case 'ViewAllRouteExtra':
         return ViewAllRouteExtra(
@@ -405,6 +426,19 @@ class ViewAllRoute extends GoRouteData with $ViewAllRoute {
       category: $extra.category,
       onTap: $extra.onTap,
     );
+  }
+}
+
+/// One of the active provider's categories (see
+/// [SkyStreamProvider.getCategories]), opened from home's category chips.
+@TypedGoRoute<CategoryRoute>(path: '/category')
+class CategoryRoute extends GoRouteData with $CategoryRoute {
+  const CategoryRoute({required this.$extra});
+  final CategoryRouteExtra $extra;
+
+  @override
+  Widget build(BuildContext context, GoRouterState state) {
+    return CategoryScreen(category: $extra.category);
   }
 }
 

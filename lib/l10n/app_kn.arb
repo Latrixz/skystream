@@ -659,5 +659,13 @@
   "devQoeLog": "QoE ಲಾಗ್",
   "devQoeLogSubtitle": "ಪ್ಲೇಬ್ಯಾಕ್ ಸಮಯಗಳನ್ನು ಆ್ಯಪ್ ಲಾಗ್‌ಗೆ ಬರೆಯುತ್ತದೆ",
   "playerGoLive": "ಲೈವ್‌ಗೆ ಹೋಗಿ",
-  "playerBehindLive": "ಲೈವ್‌ಗಿಂತ {time} ಹಿಂದೆ"
+  "playerBehindLive": "ಲೈವ್‌ಗಿಂತ {time} ಹಿಂದೆ",
+  "categories": "ವರ್ಗಗಳು",
+  "categorySearchHint": "{category} ನಲ್ಲಿ ಹುಡುಕಿ",
+  "categorySort": "ವಿಂಗಡಿಸು",
+  "categoryReset": "ಮರುಹೊಂದಿಸಿ",
+  "categoryEmpty": "ಇಲ್ಲಿ ಇನ್ನೂ ಏನೂ ಇಲ್ಲ",
+  "categoryEmptyHint": "ಬೇರೆ ಫಿಲ್ಟರ್‌ಗಳು ಅಥವಾ ಬೇರೆ ಹುಡುಕಾಟ ಪ್ರಯತ್ನಿಸಿ.",
+  "categoryLoadFailed": "ಈ ವರ್ಗವನ್ನು ಲೋಡ್ ಮಾಡಲಾಗಲಿಲ್ಲ",
+  "categoryLoadMoreFailed": "ಇನ್ನಷ್ಟು ಶೀರ್ಷಿಕೆಗಳನ್ನು ಲೋಡ್ ಮಾಡಲಾಗಲಿಲ್ಲ"
 }

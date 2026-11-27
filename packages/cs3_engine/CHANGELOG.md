@@ -1,5 +1,9 @@
 ## Unreleased
 
+- **Categories:** `categories` and `categoryPage` browse a provider's categories, with filters, a sort, a
+  search within them and pages, for extensions whose `MainAPI` has `csCategories()` and
+  `csCategoryPage(categoryId, filtersJson, query, page)` (see `CategoryCalls.kt`). The engine sets the
+  system property `cs3engine.categories=true`, so extensions can tell the app shows categories itself.
 - **A site counts as letting only the browser through on proof only:** a clearance the browser
   earned in that solve (or moments before) meeting the check again. Behind `CloudflareKiller`, a 403
   with none of a check's marks counts only when one of the site's pages gets past it. A 503 with
