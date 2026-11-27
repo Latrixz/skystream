@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/extensions/extension_manager.dart';
 import '../../../core/utils/layout_constants.dart';
 import '../../../core/utils/responsive_breakpoints.dart';
+import 'live_search.dart';
 import 'search_history_provider.dart';
 import 'search_provider.dart';
 import '../../../l10n/generated/app_localizations.dart';
@@ -18,6 +19,10 @@ import 'widgets/check_section.dart';
 import '../../../shared/widgets/cards_wrapper.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/focus/text_field_keys.dart';
+
+/// At most this many suggestion strings while results come in as the user
+/// types, so the panel does not cover them.
+const int _kLiveSuggestionLimit = 3;
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -45,11 +50,19 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// Opens when the field takes focus or the text changes; closes on submit.
   bool _isPanelOpen = false;
 
+  /// Commits the field's text as the search once the user pauses typing.
+  Timer? _liveSearchTimer;
+
+  /// The trimmed text [_liveSearchTimer] was last set for, so a cursor move
+  /// - which the controller reports like an edit - does not restart it.
+  String _liveSearchText = '';
+
   @override
   void initState() {
     super.initState();
     // Restore any previously committed query into the text field.
     _controller.text = ref.read(searchQueryProvider);
+    _liveSearchText = _controller.text.trim();
     _controller.addListener(_onTextChanged);
     _focusNode.addListener(_onSearchFieldFocusChanged);
 
@@ -197,6 +210,30 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     // Typing always reopens the panel: a user editing a committed query is
     // starting a new search, and wants the recents and suggestions back.
     setState(() => _isPanelOpen = true);
+    _scheduleLiveSearch();
+  }
+
+  /// Searches for what is in the field once typing pauses, without waiting
+  /// for Enter. Every extension searches, so the pause is a little longer
+  /// than a single provider's. Text too short to search for clears the
+  /// search instead, rather than leaving the last query's answer up.
+  void _scheduleLiveSearch() {
+    final text = _controller.text.trim();
+    if (text == _liveSearchText) return;
+    _liveSearchText = text;
+    _liveSearchTimer?.cancel();
+    _liveSearchTimer = Timer(kGlobalLiveSearchDebounce, () {
+      _liveSearchTimer = null;
+      if (!mounted) return;
+      _commitQuery(isLiveSearchable(text) ? text : '');
+    });
+  }
+
+  /// Makes [query] the search, unless it already is: the same query again
+  /// keeps the results it has rather than sending the search twice.
+  void _commitQuery(String query) {
+    if (ref.read(searchQueryProvider) == query) return;
+    ref.read(searchQueryProvider.notifier).set(query);
   }
 
   /// Reopens the panel when the user returns to the field.
@@ -246,8 +283,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return _recentsFor(ref.read(searchHistoryProvider)).isNotEmpty;
   }
 
+  /// Whether the field holds a query that searches as it is typed.
+  bool get _isLiveSearching => isLiveSearchable(_controller.text);
+
   @override
   void dispose() {
+    _liveSearchTimer?.cancel();
     _controller.removeListener(_onTextChanged);
     _focusNode.removeListener(_onSearchFieldFocusChanged);
     _controller.dispose();
@@ -267,11 +308,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       text: trimmed,
       selection: TextSelection.collapsed(offset: trimmed.length),
     );
+    // Enter searches now: the pause the live search waits for is over.
+    _liveSearchTimer?.cancel();
+    _liveSearchTimer = null;
+    _liveSearchText = trimmed;
     // Recorded on the way into the search, not on the way out: a query that
     // returned nothing is still one the user made and may want back.
     unawaited(ref.read(searchHistoryProvider.notifier).add(trimmed));
     ref.read(searchSuggestionControllerProvider.notifier).clear();
-    ref.read(searchQueryProvider.notifier).set(trimmed);
+    _commitQuery(trimmed);
     // Dismiss keyboard after submitting, just like YouTube / browser.
     _focusNode.unfocus();
     // _onTextChanged reopened the panel as the value above was written; the
@@ -553,10 +598,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   _panelData() {
     final suggestionState = ref.watch(searchSuggestionControllerProvider);
     final recents = _recentsFor(ref.watch(searchHistoryProvider));
-    final suggestions = withoutDuplicatedHistory(
+    var suggestions = withoutDuplicatedHistory(
       suggestionState.suggestions,
       recents,
     );
+    // Results come in under the panel as the user types, so it keeps to a
+    // few suggestions rather than covering them.
+    if (_isLiveSearching && suggestions.length > _kLiveSuggestionLimit) {
+      suggestions = suggestions.take(_kLiveSuggestionLimit).toList();
+    }
     final typedLongEnough = suggestionState.query.trim().length >= 2;
     final hasSuggestionContent =
         typedLongEnough &&
@@ -588,10 +638,32 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  /// The phone body, where the panel covers the results outright.
+  /// The phone body, where the panel covers the results outright - except
+  /// while a query is searching as it is typed: then the panel keeps to the
+  /// top and the results come in underneath it.
   Widget _buildBody(BuildContext context) {
     final panel = _panelData();
     if (panel == null) return _buildResultsView(context);
+    if (_isLiveSearching) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.4,
+            ),
+            child: _buildSuggestionsView(
+              context,
+              recents: panel.recents,
+              suggestions: panel.suggestions,
+              isLoadingSuggestions: panel.isLoading,
+              isFlyout: true,
+            ),
+          ),
+          Expanded(child: _buildResultsView(context)),
+        ],
+      );
+    }
     return _buildSuggestionsView(
       context,
       recents: panel.recents,
@@ -786,9 +858,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget _buildEmptyState(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final query = ref.watch(searchQueryProvider);
-    final isInputEmpty = _controller.text.trim().isEmpty;
+    final text = _controller.text.trim();
+    final isInputEmpty = text.isEmpty;
 
-    if (query.isEmpty || isInputEmpty) {
+    // The field has moved on from the query that came back empty: its own
+    // search is on its way, and "no results" would answer the wrong query.
+    if (!isInputEmpty && text != query && isLiveSearchable(text)) {
+      return const Center(child: AppLoadingIndicator());
+    }
+
+    if (query.isEmpty || isInputEmpty || text != query) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

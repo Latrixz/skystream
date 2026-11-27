@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/domain/entity/multimedia_item.dart';
+import '../../../../core/extensions/base_provider.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/extensions/extension_manager.dart';
-import '../../../../core/extensions/base_provider.dart';
 import '../../../../core/utils/image_fallbacks.dart';
+import '../../../search/presentation/live_search.dart';
 import '../../../search/presentation/search_history_provider.dart';
 import '../../../search/presentation/search_provider.dart';
 import '../../../search/presentation/widgets/search_suggestion_row.dart';
@@ -15,7 +17,7 @@ import '../../../../shared/focus/text_field_keys.dart';
 
 import 'package:skystream/shared/widgets/multimedia_card.dart';
 
-import '../../../../core/network/clearance/clearance.dart';
+import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../shared/widgets/check_line.dart';
 import '../../../../shared/widgets/loading_indicator.dart';
 import '../../../../core/utils/responsive_breakpoints.dart';
@@ -38,6 +40,14 @@ class HomeSearchDelegate extends SearchDelegate<void> {
   /// Where a D-pad press down from the search field lands.
   final FocusNode _firstSuggestionFocusNode = FocusNode();
   final FocusNode _firstResultFocusNode = FocusNode();
+
+  /// The first card of the results shown while typing, for when there are
+  /// no recents or suggestions above it to land on first.
+  final FocusNode _firstLiveResultFocusNode = FocusNode();
+
+  /// The active provider's search for what is in the field, run as the user
+  /// types and picked up by Enter rather than sent again.
+  final LiveSearch _live = LiveSearch();
 
   /// The search page this delegate was built into - see [buildLeading].
   BuildContext? _page;
@@ -75,7 +85,11 @@ class HomeSearchDelegate extends SearchDelegate<void> {
     }
     // Only to a row in the tree. One that is not yet keeps the request and
     // takes the focus whenever it is built - out of the field, mid-word.
-    for (final row in [_firstSuggestionFocusNode, _firstResultFocusNode]) {
+    for (final row in [
+      _firstSuggestionFocusNode,
+      _firstLiveResultFocusNode,
+      _firstResultFocusNode,
+    ]) {
       if (row.parent != null && row.canRequestFocus) {
         row.requestFocus();
         return true;
@@ -93,6 +107,8 @@ class HomeSearchDelegate extends SearchDelegate<void> {
     whenSearchPageGone(_page, () {
       _firstSuggestionFocusNode.dispose();
       _firstResultFocusNode.dispose();
+      _firstLiveResultFocusNode.dispose();
+      _live.dispose();
       super.dispose();
     });
   }
@@ -156,6 +172,7 @@ class HomeSearchDelegate extends SearchDelegate<void> {
     if (query.isEmpty) return const SizedBox.shrink();
     return _HomeSearchResults(
       query: query,
+      live: _live,
       firstItemFocusNode: _firstResultFocusNode,
     );
   }
@@ -166,7 +183,9 @@ class HomeSearchDelegate extends SearchDelegate<void> {
     // searches are the only thing there is to show.
     return _HomeSearchSuggestions(
       query: query,
+      live: _live,
       firstItemFocusNode: _firstSuggestionFocusNode,
+      firstResultFocusNode: _firstLiveResultFocusNode,
       onSelect: (val) {
         query = val;
         showResults(context);
@@ -175,15 +194,25 @@ class HomeSearchDelegate extends SearchDelegate<void> {
   }
 }
 
+/// At most this many suggestion strings above the results shown while
+/// typing, so the results themselves stay on screen.
+const int _kLiveSuggestionLimit = 3;
+
 class _HomeSearchSuggestions extends ConsumerStatefulWidget {
   final String query;
+  final LiveSearch live;
   final void Function(String) onSelect;
   final FocusNode? firstItemFocusNode;
 
+  /// For the first result card, when no row sits above it.
+  final FocusNode? firstResultFocusNode;
+
   const _HomeSearchSuggestions({
     required this.query,
+    required this.live,
     required this.onSelect,
     this.firstItemFocusNode,
+    this.firstResultFocusNode,
   });
 
   @override
@@ -197,9 +226,7 @@ class _HomeSearchSuggestionsState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(searchSuggestionControllerProvider.notifier)
-          .onQueryChanged(widget.query);
+      if (mounted) _onQueryChanged();
     });
   }
 
@@ -208,24 +235,53 @@ class _HomeSearchSuggestionsState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.query != widget.query) {
       Future.microtask(() {
-        if (!context.mounted) return;
-        ref
-            .read(searchSuggestionControllerProvider.notifier)
-            .onQueryChanged(widget.query);
+        if (mounted) _onQueryChanged();
       });
     }
   }
 
+  /// The suggestion strings, and the live search: both wait out their own
+  /// debounce, and both drop what the previous query asked for.
+  void _onQueryChanged() {
+    ref
+        .read(searchSuggestionControllerProvider.notifier)
+        .onQueryChanged(widget.query);
+    widget.live.onQueryChanged(widget.query, _providerFor(widget.query));
+  }
+
+  /// The provider to search [query] with, or null when it is too short to
+  /// search for as it is typed - and then the provider is not even looked
+  /// up, so an empty field touches nothing but the recents.
+  SkyStreamProvider? _providerFor(String query) =>
+      isLiveSearchable(query) ? ref.read(activeProviderProvider) : null;
+
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.live,
+      builder: (context, _) => _buildList(context),
+    );
+  }
+
+  Widget _buildList(BuildContext context) {
     final searchState = ref.watch(searchSuggestionControllerProvider);
     final history = ref.watch(searchHistoryProvider);
-    final isLoading = searchState.isLoading;
-
+    final live = widget.live;
     final trimmed = widget.query.trim();
+    final provider = _providerFor(trimmed);
+    final searchable = provider != null;
+    // A keystroke reaches the live search a moment after this build, and
+    // until then it still holds the previous query: that one's results are
+    // not this one's, so this one counts as on its way.
+    final held = searchable && live.holds(trimmed, provider);
+    final liveLoading = searchable && (!held || live.isLoading);
+    final liveResults = held ? live.results : null;
+    final noResults = liveResults != null && liveResults.isEmpty;
+    final hasResults = liveResults != null && liveResults.isNotEmpty;
+
     // An empty field gets the full recents list; once the user is typing,
-    // only a few, because the suggestions underneath are what they are
-    // typing towards.
+    // only a few, because the suggestions and results underneath are what
+    // they are typing towards.
     final recents = matchingSearchHistory(
       history,
       trimmed,
@@ -233,93 +289,167 @@ class _HomeSearchSuggestionsState
           ? kSearchHistoryEmptyFieldLimit
           : kSearchHistoryTypingLimit,
     );
-    final suggestions = withoutDuplicatedHistory(
+    var suggestions = withoutDuplicatedHistory(
       searchState.suggestions,
       recents,
     );
+    if (searchable && suggestions.length > _kLiveSuggestionLimit) {
+      suggestions = suggestions.take(_kLiveSuggestionLimit).toList();
+    }
+    final isLoading =
+        liveLoading || (searchState.isLoading && liveResults == null);
 
-    if (recents.isEmpty && suggestions.isEmpty && !isLoading) {
-      // Nothing typed and nothing searched before: the field's own hint is
-      // the whole message, so leave the sheet blank rather than telling the
-      // user there are no results for a query they have not made.
-      if (trimmed.isEmpty) return const SizedBox.shrink();
-      return Center(
-        child: Text(
-          'No results found',
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurface
-                .withValues(alpha: 0.5),
-          ),
-        ),
-      );
+    final noResultsLine = Text(
+      AppLocalizations.of(context)!.noResultsFound,
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+      ),
+    );
+
+    if (recents.isEmpty && suggestions.isEmpty && !isLoading && !hasResults) {
+      // Nothing typed, or too little to search for, and nothing searched
+      // before: the field's own hint is the whole message. "No results" is
+      // only ever said of a search that ran and came back empty.
+      if (!noResults) return const SizedBox.shrink();
+      return Center(child: noResultsLine);
     }
 
-    // At most ten recents and ten suggestions, so the whole list is cheap to
-    // build eagerly - and that keeps the recents inside one Semantics group.
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      children: [
-        SearchHistorySection(
-          queries: recents,
-          // The first row overall takes the node, whether it is a recent or
-          // - with no history - the first suggestion.
-          firstItemFocusNode: recents.isNotEmpty
-              ? widget.firstItemFocusNode
-              : null,
-          onSelect: widget.onSelect,
-          onRemove: (query) =>
-              ref.read(searchHistoryProvider.notifier).remove(query),
-        ),
-        for (final (index, suggestion) in suggestions.indexed)
-          SearchSuggestionRow(
-            key: ValueKey('search-suggestion-$suggestion'),
-            text: suggestion,
-            icon: Icons.search_rounded,
-            focusNode: (index == 0 && recents.isEmpty)
-                ? widget.firstItemFocusNode
-                : null,
-            trailingIcon: Icons.north_west_rounded,
-            onTap: () => widget.onSelect(suggestion),
-            onTrailingTap: () => widget.onSelect(suggestion),
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          sliver: SliverList.list(
+            children: [
+              SearchHistorySection(
+                queries: recents,
+                // The first row overall takes the node, whether it is a
+                // recent or - with no history - the first suggestion.
+                firstItemFocusNode: recents.isNotEmpty
+                    ? widget.firstItemFocusNode
+                    : null,
+                onSelect: widget.onSelect,
+                onRemove: (query) =>
+                    ref.read(searchHistoryProvider.notifier).remove(query),
+              ),
+              for (final (index, suggestion) in suggestions.indexed)
+                SearchSuggestionRow(
+                  key: ValueKey('search-suggestion-$suggestion'),
+                  text: suggestion,
+                  icon: Icons.search_rounded,
+                  focusNode: (index == 0 && recents.isEmpty)
+                      ? widget.firstItemFocusNode
+                      : null,
+                  trailingIcon: Icons.north_west_rounded,
+                  onTap: () => widget.onSelect(suggestion),
+                  onTrailingTap: () => widget.onSelect(suggestion),
+                ),
+            ],
           ),
+        ),
         // Kept below the recents rather than replacing the screen: the
         // recents are already on the glass and should not flicker away every
-        // time a keystroke starts a new suggestion fetch.
+        // time a keystroke starts a new search.
         if (isLoading)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Center(
-              child: AppLoadingIndicator(
-                color: Theme.of(context).colorScheme.primary
-                    .withValues(alpha: 0.5),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppLoadingIndicator(
+                      color: Theme.of(context).colorScheme.primary
+                          .withValues(alpha: 0.5),
+                    ),
+                    if (held && live.searchedAt != null)
+                      CheckLine(
+                        source: provider.checkSource,
+                        since: live.searchedAt,
+                        offerVerify: true,
+                      ),
+                  ],
+                ),
               ),
             ),
+          )
+        else if (noResults)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: noResultsLine),
+            ),
+          )
+        else if (hasResults)
+          _resultsGrid(
+            context,
+            items: liveResults,
+            heroPrefix: 'live_search_${provider?.packageName}',
+            firstItemFocusNode: widget.firstResultFocusNode,
+            onOpen: (item) {
+              // A result opened is a search the user made, as much as Enter.
+              unawaited(ref.read(searchHistoryProvider.notifier).add(trimmed));
+              DetailsRoute($extra: DetailsRouteExtra(item: item))
+                  .push<void>(context);
+            },
           ),
       ],
     );
   }
 }
 
+/// [items] as a grid of poster cards: the results shown while typing and
+/// the ones Enter shows look the same.
+Widget _resultsGrid(
+  BuildContext context, {
+  required List<MultimediaItem> items,
+  required String heroPrefix,
+  required void Function(MultimediaItem) onOpen,
+  FocusNode? firstItemFocusNode,
+}) {
+  final isLarge = MediaQuery.of(context).size.width > 600;
+  final maxExtent = isLarge ? 200.0 : 130.0;
+
+  return SliverPadding(
+    padding: const EdgeInsets.all(16),
+    sliver: SliverGrid.builder(
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: maxExtent,
+        childAspectRatio: 2 / 3.2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: items.length,
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return MultimediaCard(
+          key: ValueKey(item.url),
+          focusNode: index == 0 ? firstItemFocusNode : null,
+          imageUrl: AppImageFallbacks.poster(item.posterUrl, label: item.title),
+          title: item.title,
+          heroTag: '${heroPrefix}_${item.url}_$index',
+          onTap: () => onOpen(item),
+        );
+      },
+    ),
+  );
+}
+
 class _HomeSearchResults extends ConsumerStatefulWidget {
   final String query;
+  final LiveSearch live;
   final FocusNode? firstItemFocusNode;
 
-  const _HomeSearchResults({required this.query, this.firstItemFocusNode});
+  const _HomeSearchResults({
+    required this.query,
+    required this.live,
+    this.firstItemFocusNode,
+  });
 
   @override
   ConsumerState<_HomeSearchResults> createState() => _HomeSearchResultsState();
 }
 
 class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
-  bool isLoading = true;
-  ProviderSearchResult? result;
-
-  /// When the search went out: a bot check its plugin met since is the one
-  /// the spinner, or the empty results, stand over. The search gives up on a
-  /// check that wants a person after the automatic try, so the empty results
-  /// come well after the check was met.
-  DateTime? _searchedAt;
-
   @override
   void initState() {
     super.initState();
@@ -334,53 +464,41 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
     }
   }
 
-  Future<void> _performSearch() async {
+  /// Searches for the query - unless the live search already has it, in
+  /// flight or done, which Enter then just shows. [force] searches again
+  /// all the same, for a check that has cleared.
+  void _performSearch({bool force = false}) {
     // Recorded on the way into the search, not on the way out: a query that
     // returned nothing is still one the user made and may want back. Once
     // the current build is over: the first search starts in initState, and
-    // a provider changed while widgets build is an error.
+    // a provider - or the live search's listeners - changed while widgets
+    // build is an error.
     final history = ref.read(searchHistoryProvider.notifier);
-    final query = widget.query;
-    unawaited(Future.microtask(() => history.add(query)));
-
-    final clearance = Clearance.instance;
-    setState(() {
-      isLoading = true;
-      result = null;
-      _searchedAt = clearance.isReady ? clearance.checks.now : DateTime.now();
-    });
-
-    final SkyStreamProvider? provider = ref.read(activeProviderProvider);
-    if (provider == null) {
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-
-    try {
-      final rawResults = await provider.search(widget.query);
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-          result = ProviderSearchResult(
-            providerId: provider.packageName,
-            providerName: provider.name,
-            results: rawResults.toList(),
-          );
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
-    }
+    final query = widget.query.trim();
+    final provider = ref.read(activeProviderProvider);
+    unawaited(
+      Future.microtask(() {
+        if (!force) history.add(query);
+        if (mounted) widget.live.searchNow(query, provider, force: force);
+      }),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      final provider = ref.read(activeProviderProvider);
+    return ListenableBuilder(
+      listenable: widget.live,
+      builder: (context, _) => _buildResults(context),
+    );
+  }
+
+  Widget _buildResults(BuildContext context) {
+    final provider = ref.read(activeProviderProvider);
+    final live = widget.live;
+    final held = live.holds(widget.query, provider);
+    final results = held ? live.results : null;
+
+    if (results == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -390,7 +508,7 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
             // the check carries on by itself.
             CheckLine(
               source: provider?.checkSource,
-              since: _searchedAt,
+              since: held ? live.searchedAt : null,
               offerVerify: true,
             ),
           ],
@@ -398,7 +516,7 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
       );
     }
 
-    if (result == null || result!.results.isEmpty) {
+    if (results.isEmpty) {
       // Size question, asked of the size: a 960 dp television clears the
       // tablet breakpoint like any other big window.
       final isWidescreen = context.isTabletOrLarger;
@@ -411,10 +529,10 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
           mainAxisSize: MainAxisSize.min,
           children: [
             CheckLine(
-              source: ref.read(activeProviderProvider)?.checkSource,
-              since: _searchedAt,
+              source: provider?.checkSource,
+              since: live.searchedAt,
               offerVerify: true,
-              onCleared: _performSearch,
+              onCleared: () => _performSearch(force: true),
             ),
             Text(
               'No Results Found',
@@ -441,33 +559,18 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
       );
     }
 
-    final isLarge = MediaQuery.of(context).size.width > 600;
-    final maxExtent = isLarge ? 200.0 : 130.0;
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: maxExtent,
-        childAspectRatio: 2 / 3.2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 16,
-      ),
-      itemCount: result!.results.length,
-      itemBuilder: (context, index) {
-        final item = result!.results[index];
-        final uniqueTag = 'search_${result!.providerId}_${item.url}_$index';
-
-        return MultimediaCard(
-          key: ValueKey(item.url),
-          focusNode: index == 0 ? widget.firstItemFocusNode : null,
-          imageUrl: AppImageFallbacks.poster(item.posterUrl, label: item.title),
-          title: item.title,
-          heroTag: uniqueTag,
-          onTap: () =>
+    return CustomScrollView(
+      slivers: [
+        _resultsGrid(
+          context,
+          items: results,
+          heroPrefix: 'search_${provider?.packageName}',
+          firstItemFocusNode: widget.firstItemFocusNode,
+          onOpen: (item) =>
               DetailsRoute($extra: DetailsRouteExtra(item: item))
                   .push<void>(context),
-        );
-      },
+        ),
+      ],
     );
   }
 }

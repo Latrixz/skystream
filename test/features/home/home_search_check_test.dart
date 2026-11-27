@@ -122,7 +122,6 @@ void main() {
                   onPressed: () => showSearch<void>(
                     context: context,
                     delegate: HomeSearchDelegate(),
-                    query: 'dune',
                   ),
                   child: const Text('open'),
                 ),
@@ -134,10 +133,16 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.showKeyboard(find.byType(TextField));
+    // Typed and sent straight away, inside the pause the live search waits
+    // for: Enter is the one search that goes out.
+    await tester.enterText(find.byType(TextField), 'dune');
+    await tester.pump();
     await tester.testTextInput.receiveAction(TextInputAction.search);
     await tester.pump();
     await tester.pump();
+    // Past the cross-fade, where the suggestions going out show the same
+    // search as the results coming in.
+    await tester.pump(const Duration(milliseconds: 400));
   }
 
   // Home's search doesn't wait for a person: once the automatic try wants
