@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
@@ -557,6 +559,20 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
 
     const bleed = 60.0;
 
+    if (_isPortraitOnly(movie)) {
+      return _buildPortraitSlide(
+        context: context,
+        movie: movie,
+        height: height,
+        isDesktop: isDesktop,
+        parallaxOffset: parallaxOffset,
+        contentOffset: contentOffset,
+        opacity: opacity,
+        scaffoldColor: scaffoldColor,
+        theme: theme,
+      );
+    }
+
     return ClipRect(
       child: Stack(
         fit: StackFit.expand,
@@ -577,6 +593,7 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
             child: LayoutBuilder(
               builder: (context, constraints) => CachedNetworkImage(
                 imageUrl: imageUrl,
+                httpHeaders: movie.headers,
                 fit: BoxFit.cover,
                 // TV and desktop fetch `original` backdrops (tmdb_config.dart
                 // :78-80) — 1920x1080 at best, 3840x2160 for popular titles,
@@ -602,57 +619,11 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
             bottom: -bleed - parallaxOffset,
             left: 0,
             right: 0,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: isDesktop
-                      ? [
-                          Colors.black.withValues(alpha: 0.2),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.45),
-                          Colors.black.withValues(alpha: 0.75),
-                        ]
-                      : [
-                          Colors.black.withValues(alpha: 0.3),
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.4),
-                          Colors.black.withValues(alpha: 0.8),
-                        ],
-                  stops: isDesktop
-                      ? const [0.0, 0.35, 0.75, 1.0]
-                      : const [0.0, 0.4, 0.6, 1.0],
-                ),
-              ),
-            ),
+            child: _buildParallaxGradient(isDesktop: isDesktop),
           ),
 
           // 2.5. Fixed Bottom Feather (eased page transition scrim)
-          Positioned(
-            bottom: -1,
-            left: 0,
-            right: 0,
-            height: 120,
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      scaffoldColor.withValues(alpha: 0.0),
-                      scaffoldColor.withValues(alpha: 0.15),
-                      scaffoldColor.withValues(alpha: 0.45),
-                      scaffoldColor.withValues(alpha: 0.8),
-                      scaffoldColor,
-                    ],
-                    stops: const [0.0, 0.5, 0.75, 0.9, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          _buildBottomFeather(scaffoldColor),
 
           // 3. Content
           Positioned(
@@ -680,6 +651,275 @@ class _ExploreCarouselState extends ConsumerState<ExploreCarousel>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildParallaxGradient({required bool isDesktop}) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDesktop
+              ? [
+                  Colors.black.withValues(alpha: 0.2),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.45),
+                  Colors.black.withValues(alpha: 0.75),
+                ]
+              : [
+                  Colors.black.withValues(alpha: 0.3),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.4),
+                  Colors.black.withValues(alpha: 0.8),
+                ],
+          stops: isDesktop
+              ? const [0.0, 0.35, 0.75, 1.0]
+              : const [0.0, 0.4, 0.6, 1.0],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomFeather(Color scaffoldColor) {
+    return Positioned(
+      bottom: -1,
+      left: 0,
+      right: 0,
+      height: 120,
+      child: IgnorePointer(
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                scaffoldColor.withValues(alpha: 0.0),
+                scaffoldColor.withValues(alpha: 0.15),
+                scaffoldColor.withValues(alpha: 0.45),
+                scaffoldColor.withValues(alpha: 0.8),
+                scaffoldColor,
+              ],
+              stops: const [0.0, 0.5, 0.75, 0.9, 1.0],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Decode width of the blurred ambience behind a portrait-only slide. The
+  /// blur throws the detail away, so a thumbnail is all it needs, and the
+  /// blur pass runs over that small texture instead of a full-size poster.
+  static const int _ambienceDecodeWidth = 160;
+
+  /// Blur radius of that ambience, in logical pixels.
+  static const double _ambienceBlurSigma = 28;
+
+  /// An item with a poster and no banner: plugin home items (CloudStream's
+  /// SearchResponse has no backdrop field) and the odd TMDB title without a
+  /// backdrop. Stretching a portrait poster across the wide hero both
+  /// pixelates and crops it, so these slides get [_buildPortraitSlide].
+  static bool _isPortraitOnly(MultimediaItem movie) {
+    final banner = movie.bannerUrl?.trim() ?? '';
+    return banner.isEmpty && movie.posterUrl.trim().isNotEmpty;
+  }
+
+  /// The slide for a [_isPortraitOnly] item: the poster, blurred and darkened,
+  /// fills the hero as ambience, and the poster itself sits sharp at its own
+  /// aspect ratio — to the right of the text on the wide layout, above the
+  /// centred text on the narrow one.
+  Widget _buildPortraitSlide({
+    required BuildContext context,
+    required MultimediaItem movie,
+    required double height,
+    required bool isDesktop,
+    required double parallaxOffset,
+    required double contentOffset,
+    required double opacity,
+    required Color scaffoldColor,
+    required ThemeData theme,
+  }) {
+    const bleed = 60.0;
+    final posterUrl = movie.posterUrl;
+
+    Widget fade(Widget child) =>
+        opacity >= 0.999 ? child : Opacity(opacity: opacity, child: child);
+
+    final content = _buildCarouselContent(
+      isDesktop: isDesktop,
+      movie: movie,
+      theme: theme,
+      context: context,
+    );
+
+    return ClipRect(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // 1. Blurred poster ambience
+          Positioned(
+            top: -bleed + parallaxOffset,
+            bottom: -bleed - parallaxOffset,
+            left: 0,
+            right: 0,
+            child: RepaintBoundary(
+              child: ImageFiltered(
+                key: const ValueKey('portrait-banner-ambience'),
+                imageFilter: ImageFilter.blur(
+                  sigmaX: _ambienceBlurSigma,
+                  sigmaY: _ambienceBlurSigma,
+                ),
+                child: CachedNetworkImage(
+                  imageUrl: posterUrl,
+                  httpHeaders: movie.headers,
+                  fit: BoxFit.cover,
+                  memCacheWidth: _ambienceDecodeWidth,
+                  placeholder: (context, url) => Container(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // 2. Parallax Gradients, over a flat dim: unlike a backdrop, the
+          // ambience is the poster's own colours at full strength, and the
+          // gradient's clear middle band would leave it loud behind the text.
+          Positioned(
+            top: -bleed + parallaxOffset,
+            bottom: -bleed - parallaxOffset,
+            left: 0,
+            right: 0,
+            child: ColoredBox(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: _buildParallaxGradient(isDesktop: isDesktop),
+            ),
+          ),
+
+          // 2.5. Fixed Bottom Feather (eased page transition scrim)
+          _buildBottomFeather(scaffoldColor),
+
+          // 3. Content
+          if (isDesktop)
+            // Text on the left where it always is, the poster on the right.
+            Positioned(
+              left: 24,
+              right: 48,
+              top: 32,
+              bottom: 48,
+              child: Transform.translate(
+                offset: Offset(0, contentOffset),
+                child: fade(
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.bottomLeft,
+                          child: content,
+                        ),
+                      ),
+                      const SizedBox(width: 32),
+                      LayoutBuilder(
+                        builder: (context, constraints) => _buildSharpPoster(
+                          context,
+                          movie,
+                          height: constraints.maxHeight,
+                          maxWidth: constraints.maxHeight,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            // Centred text at the bottom, as before, with the poster above.
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 48,
+              child: Transform.translate(
+                offset: Offset(0, contentOffset),
+                child: fade(
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final posterHeight = height * 0.42;
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // A landscape phone leaves no room above the text;
+                          // the ambience alone still beats a stretched poster.
+                          if (posterHeight >= 140) ...[
+                            _buildSharpPoster(
+                              context,
+                              movie,
+                              height: posterHeight,
+                              maxWidth: constraints.maxWidth,
+                            ),
+                            const SizedBox(height: LayoutConstants.spacingLg),
+                          ],
+                          content,
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The poster at its natural aspect ratio, [height] tall (narrower than
+  /// [maxWidth] for anything taller than it is wide), with rounded corners and
+  /// a soft shadow that hug the image rather than its box.
+  Widget _buildSharpPoster(
+    BuildContext context,
+    MultimediaItem movie, {
+    required double height,
+    required double maxWidth,
+  }) {
+    if (!height.isFinite || height <= 0) return const SizedBox.shrink();
+    final radius = BorderRadius.circular(14);
+    return SizedBox(
+      height: height,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: CachedNetworkImage(
+          key: const ValueKey('portrait-banner-poster'),
+          imageUrl: movie.posterUrl,
+          httpHeaders: movie.headers,
+          // Contain is height-driven here, so the height is the bound.
+          memCacheHeight: (height * View.of(context).devicePixelRatio).round(),
+          // The image sizes itself: a tight height and a loose width make
+          // RenderImage take the source's aspect ratio, so the clip and the
+          // shadow below land on the poster's own edges.
+          imageBuilder: (context, imageProvider) => DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: radius,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 24,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: radius,
+              child: Image(image: imageProvider, fit: BoxFit.contain),
+            ),
+          ),
+          placeholder: (context, url) => const SizedBox.shrink(),
+          errorWidget: (context, url, error) => const SizedBox.shrink(),
+        ),
       ),
     );
   }
