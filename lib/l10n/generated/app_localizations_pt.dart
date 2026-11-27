@@ -2425,6 +2425,14 @@ class AppLocalizationsPt extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time atrás do direto';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }
 
 /// The translations for Portuguese, as used in Brazil (`pt_BR`).

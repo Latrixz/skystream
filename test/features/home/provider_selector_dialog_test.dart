@@ -17,12 +17,13 @@ const int _providerCount = 40;
 
 class _FakeProvider extends SkyStreamProvider {
   final int index;
-  _FakeProvider(this.index);
+  final String? _name;
+  _FakeProvider(this.index, [this._name]);
 
   @override
   String get packageName => 'fake.provider.$index';
   @override
-  String get name => 'Provider $index';
+  String get name => _name ?? 'Provider $index';
   @override
   String get mainUrl => 'https://fake.test/$index';
   @override
@@ -90,7 +91,9 @@ class _FakeExtensionsController extends ExtensionsController {
 
 class _Host extends StatelessWidget {
   final VoidCallback onClosed;
-  const _Host({required this.onClosed});
+  final List<SkyStreamProvider>? providers;
+  final SkyStreamProvider? activeProvider;
+  const _Host({required this.onClosed, this.providers, this.activeProvider});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -99,8 +102,10 @@ class _Host extends StatelessWidget {
         onPressed: () async {
           await showProviderSelectorDialog(
             context,
-            providers: List.generate(_providerCount, _FakeProvider.new),
-            activeProvider: null,
+            providers:
+                providers ??
+                List.generate(_providerCount, (i) => _FakeProvider(i)),
+            activeProvider: activeProvider,
           );
           onClosed();
         },
@@ -113,6 +118,8 @@ class _Host extends StatelessWidget {
 Future<ProviderContainer> _pumpHost(
   WidgetTester tester, {
   required VoidCallback onClosed,
+  List<SkyStreamProvider>? providers,
+  SkyStreamProvider? activeProvider,
 }) async {
   final container = ProviderContainer(
     overrides: [
@@ -133,7 +140,11 @@ Future<ProviderContainer> _pumpHost(
       child: MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: _Host(onClosed: onClosed),
+        home: _Host(
+          onClosed: onClosed,
+          providers: providers,
+          activeProvider: activeProvider,
+        ),
       ),
     ),
   );
@@ -205,5 +216,47 @@ void main() {
       container.read(activeProviderProvider)?.packageName,
       'fake.provider.2',
     );
+  });
+
+  testWidgets('search narrows by name, ignoring case, CJK included', (
+    tester,
+  ) async {
+    final active = _FakeProvider(1, 'Netflix');
+    await _pumpHost(
+      tester,
+      onClosed: () {},
+      providers: [
+        _FakeProvider(0, 'Bilibili'),
+        active,
+        _FakeProvider(2, '爱奇艺 iQIYI'),
+        _FakeProvider(3, 'NetMirror'),
+      ],
+      activeProvider: active,
+    );
+
+    // The active provider is marked with the check, not a radio.
+    expect(find.byType(Radio<String?>), findsNothing);
+    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'NET');
+    await tester.pumpAndSettle();
+    expect(find.text('Netflix'), findsOneWidget);
+    expect(find.text('NetMirror'), findsOneWidget);
+    expect(find.text('Bilibili'), findsNothing);
+    expect(find.text('None'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), '爱奇');
+    await tester.pumpAndSettle();
+    expect(find.text('爱奇艺 iQIYI'), findsOneWidget);
+    expect(find.text('Netflix'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'zzz');
+    await tester.pumpAndSettle();
+    expect(find.text('No provider matches "zzz".'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear'));
+    await tester.pumpAndSettle();
+    expect(find.text('None'), findsOneWidget);
+    expect(find.text('Bilibili'), findsOneWidget);
   });
 }

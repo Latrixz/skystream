@@ -2438,4 +2438,12 @@ class AppLocalizationsUr extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'لائیو سے $time پیچھے';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

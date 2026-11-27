@@ -2444,4 +2444,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time por detrás del directo';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

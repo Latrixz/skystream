@@ -2425,4 +2425,12 @@ class AppLocalizationsHr extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time iza prijenosa uživo';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

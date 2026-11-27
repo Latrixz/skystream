@@ -659,5 +659,7 @@
   "devQoeLog": "QoE ಲಾಗ್",
   "devQoeLogSubtitle": "ಪ್ಲೇಬ್ಯಾಕ್ ಸಮಯಗಳನ್ನು ಆ್ಯಪ್ ಲಾಗ್‌ಗೆ ಬರೆಯುತ್ತದೆ",
   "playerGoLive": "ಲೈವ್‌ಗೆ ಹೋಗಿ",
-  "playerBehindLive": "ಲೈವ್‌ಗಿಂತ {time} ಹಿಂದೆ"
+  "playerBehindLive": "ಲೈವ್‌ಗಿಂತ {time} ಹಿಂದೆ",
+  "providerSelectorSearchHint": "ಪ್ರೊವೈಡರ್ ಹುಡುಕಿ…",
+  "providerSelectorNoMatch": "\"{query}\" ಗೆ ಹೊಂದುವ ಯಾವುದೇ ಪ್ರೊವೈಡರ್ ಇಲ್ಲ."
 }

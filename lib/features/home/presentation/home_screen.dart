@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import '../../../core/cloudstream/cloudstream_provider.dart';
-import '../../cloudstream/presentation/cloudstream_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,6 +21,8 @@ import '../../explore/presentation/view_all_screen.dart';
 import '../../../shared/widgets/desktop_scroll_wrapper.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import '../../../shared/widgets/no_scrollbar_behavior.dart';
+import '../../../shared/widgets/plugin_logo.dart';
+import '../../../shared/focus/text_field_keys.dart';
 import '../../extensions/providers/extensions_controller.dart';
 import '../../../core/extensions/models/extension_plugin.dart';
 
@@ -801,16 +802,41 @@ class _ProviderSelectorDialog extends StatefulWidget {
 }
 
 class _ProviderSelectorDialogState extends State<_ProviderSelectorDialog> {
+  /// Height of one row. The initial scroll to the active provider counts in
+  /// these, so the rows hold to it.
+  static const double _rowHeight = 58;
+
   final ScrollController _scrollController = ScrollController();
   final ScrollController _chipsScrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+
+  /// Up and down leave the field while the keyboard is put away, and Select
+  /// brings it back - see [remoteTextFieldKeys].
+  final FocusNode _searchNode = FocusNode(
+    debugLabel: 'provider selector search',
+    onKeyEvent: remoteTextFieldKeys,
+  );
+  String _query = '';
   bool _didInitialScroll = false;
 
   @override
   void dispose() {
     _scrollController.dispose();
     _chipsScrollController.dispose();
+    _searchController.dispose();
+    _searchNode.dispose();
     super.dispose();
   }
+
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
+  /// Case-insensitive substring match on the name. Scripts without case
+  /// (Chinese, Japanese, Korean) match as typed.
+  bool _matchesQuery(SkyStreamProvider p, String needle) =>
+      needle.isEmpty || p.name.toLowerCase().contains(needle);
 
   String _getLocalizedType(ProviderType type, AppLocalizations l10n) {
     switch (type) {
@@ -827,20 +853,136 @@ class _ProviderSelectorDialogState extends State<_ProviderSelectorDialog> {
     }
   }
 
+  void _select(WidgetRef ref, SkyStreamProvider? provider) {
+    ref.read(activeProviderProvider.notifier).set(provider);
+    Navigator.pop(context);
+    ref.invalidate(homeDataProvider);
+  }
+
+  Widget _buildSearchField(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchNode,
+        textInputAction: TextInputAction.search,
+        onChanged: (value) => setState(() => _query = value),
+        decoration: InputDecoration(
+          isDense: true,
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: _query.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: l10n.discoverClearSearch,
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: _clearSearch,
+                ),
+          hintText: l10n.providerSelectorSearchHint,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      ),
+    );
+  }
+
+  /// One row of the list: logo, name over a muted subtitle, and a check on
+  /// the active provider. ListTile keeps the theme's focus highlight for
+  /// TV and desktop, and Select / Enter activate it.
+  Widget _buildRow(
+    BuildContext context, {
+    required Widget leading,
+    required String title,
+    String? subtitle,
+    bool isDebug = false,
+    required bool selected,
+    required bool autofocus,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: ListTile(
+        autofocus: autofocus,
+        selected: selected,
+        // The highlight and the check mark the active row; its text keeps
+        // the normal colours.
+        selectedColor: cs.onSurface,
+        selectedTileColor: cs.primaryContainer.withValues(alpha: 0.45),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        minTileHeight: _rowHeight - 2,
+        minVerticalPadding: 6,
+        minLeadingWidth: 40,
+        horizontalTitleGap: 12,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        visualDensity: VisualDensity.compact,
+        leading: leading,
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            if (isDebug) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  l10n.debug,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        subtitle: subtitle == null
+            ? null
+            : Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+        trailing: selected
+            ? Icon(Icons.check_rounded, color: cs.primary)
+            : null,
+        onTap: onTap,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final providers = widget.providers;
     final activeProvider = widget.activeProvider;
 
+    // Sized for the full list when the dialog opens, so it holds its height
+    // while a search narrows the rows instead of shrinking under the cursor.
+    // Flexible below still gives way to a short window or the keyboard.
+    final listHeight = ((providers.length + 1) * _rowHeight + 8).clamp(
+      _rowHeight * 3,
+      MediaQuery.sizeOf(context).height * 0.6,
+    );
+
     return AlertDialog(
       title: Text(l10n.selectProvider),
-      contentPadding: const EdgeInsets.fromLTRB(0, 20, 0, 0),
+      contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
       content: SizedBox(
         width: 600,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildSearchField(l10n),
             Consumer(
               builder: (context, ref, _) {
                 final currentFilter = ref.watch(homeFilterProvider);
@@ -890,216 +1032,173 @@ class _ProviderSelectorDialogState extends State<_ProviderSelectorDialog> {
                 );
               },
             ),
-            const Divider(),
+            const Divider(height: 1),
             Flexible(
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final filter = ref.watch(homeFilterProvider);
-                  final extensionsState = ref.watch(
-                    extensionsControllerProvider,
-                  );
-                  final installedPlugins = extensionsState.installedPlugins;
-
-                  final filteredProviders = filter == null
-                      ? providers
-                      : providers
-                            .where((p) => p.supportedTypes.contains(filter))
-                            .toList();
-
-                  // Auto-scroll to selected provider on initial show
-                  int targetIndex = -1;
-                  if (activeProvider == null) {
-                    if (filter == null) {
-                      targetIndex = 0;
-                    }
-                  } else {
-                    final idx = filteredProviders.indexWhere(
-                      (p) => p.packageName == activeProvider.packageName,
+              child: SizedBox(
+                height: listHeight,
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final filter = ref.watch(homeFilterProvider);
+                    final extensionsState = ref.watch(
+                      extensionsControllerProvider,
                     );
-                    if (idx != -1) {
-                      targetIndex = filter == null ? idx + 1 : idx;
-                    } else {
-                      targetIndex = 0;
+                    final installedPlugins = extensionsState.installedPlugins;
+                    final needle = _query.trim().toLowerCase();
+
+                    final filteredProviders = providers
+                        .where(
+                          (p) =>
+                              (filter == null ||
+                                  p.supportedTypes.contains(filter)) &&
+                              _matchesQuery(p, needle),
+                        )
+                        .toList();
+                    // "None" is not a provider name to search for: it only
+                    // shows on the unfiltered list.
+                    final showNone = filter == null && needle.isEmpty;
+
+                    // Auto-scroll to selected provider on initial show
+                    int targetIndex = 0;
+                    if (activeProvider != null) {
+                      final idx = filteredProviders.indexWhere(
+                        (p) => p.packageName == activeProvider.packageName,
+                      );
+                      if (idx != -1) targetIndex = showNone ? idx + 1 : idx;
                     }
-                  }
 
-                  // If still -1 (e.g. activeProvider == null and filter != null), focus first item
-                  if (targetIndex == -1) targetIndex = 0;
+                    if (!_didInitialScroll) {
+                      _didInitialScroll = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (_scrollController.hasClients) {
+                          final itemTop = targetIndex * _rowHeight;
+                          final viewportHeight =
+                              _scrollController.position.viewportDimension;
+                          final offset =
+                              itemTop - (viewportHeight / 2) + (_rowHeight / 2);
+                          final maxScroll =
+                              _scrollController.position.maxScrollExtent;
+                          _scrollController.jumpTo(
+                            offset.clamp(0.0, maxScroll),
+                          );
+                        }
+                      });
+                    }
 
-                  if (!_didInitialScroll && targetIndex != -1) {
-                    _didInitialScroll = true;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_scrollController.hasClients) {
-                        final itemTop = targetIndex * 56.0;
-                        final viewportHeight =
-                            _scrollController.position.viewportDimension;
-                        const itemHeight = 56.0;
-                        final offset =
-                            itemTop - (viewportHeight / 2) + (itemHeight / 2);
-                        final maxScroll =
-                            _scrollController.position.maxScrollExtent;
-                        _scrollController.jumpTo(offset.clamp(0.0, maxScroll));
-                      }
-                    });
-                  }
+                    if (filteredProviders.isEmpty && !showNone) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            l10n.providerSelectorNoMatch(_query.trim()),
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        ),
+                      );
+                    }
 
-                  return RadioGroup<String?>(
-                    groupValue: activeProvider?.packageName,
-                    onChanged: (val) {
-                      final selected = val == null
-                          ? null
-                          : providers.firstWhere((p) => p.packageName == val);
-                      ref.read(activeProviderProvider.notifier).set(selected);
-                      Navigator.pop(context);
-                      ref.invalidate(homeDataProvider);
-                    },
-                    child: Material(
+                    return Material(
                       color: Colors.transparent,
                       clipBehavior: Clip.hardEdge,
                       child: ListView.builder(
                         controller: _scrollController,
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
                         itemCount:
-                            (filter == null ? 1 : 0) + filteredProviders.length,
+                            (showNone ? 1 : 0) + filteredProviders.length,
                         itemBuilder: (context, index) {
-                          if (filter == null && index == 0) {
-                            return SizedBox(
-                              height: 56.0,
-                              child: Center(
-                                child: ListTile(
-                                  title: Text(l10n.none),
-                                  leading: const Radio<String?>(value: null),
-                                  autofocus: index == targetIndex,
-                                  onTap: () {
-                                    ref
-                                        .read(activeProviderProvider.notifier)
-                                        .set(null);
-                                    Navigator.pop(context);
-                                    ref.invalidate(homeDataProvider);
-                                  },
+                          if (showNone && index == 0) {
+                            final cs = Theme.of(context).colorScheme;
+                            return _buildRow(
+                              context,
+                              leading: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  Icons.block_rounded,
+                                  size: 20,
+                                  color: cs.onSurfaceVariant,
                                 ),
                               ),
+                              title: l10n.none,
+                              selected: activeProvider == null,
+                              autofocus: index == targetIndex,
+                              onTap: () => _select(ref, null),
                             );
                           }
 
                           final p =
-                              filteredProviders[filter == null
-                                  ? index - 1
-                                  : index];
-                          final isDebug = p.isDebug;
-                          final cloudStream = p is CloudStreamProvider ? p : null;
-                          // A CloudStream extension can register several providers (one
-                          // plugin, "Netflix" and "Prime Video"): then name the extension too.
-                          final isSubprovider = p.packageName.contains('::') ||
-                              (cloudStream != null && cloudStream.plugin.providers.length > 1);
-                          String pluginTag = '';
+                              filteredProviders[showNone ? index - 1 : index];
+                          final cloudStream = p is CloudStreamProvider
+                              ? p
+                              : null;
+
+                          // The SkyStream plugin behind this provider: a
+                          // plugin can register several ("parent::sub").
+                          final sep = p.packageName.indexOf('::');
+                          final parentPackageName = sep == -1
+                              ? p.packageName
+                              : p.packageName.substring(0, sep);
+                          final plugin = cloudStream != null
+                              ? null
+                              : installedPlugins
+                                    .cast<ExtensionPlugin?>()
+                                    .firstWhere(
+                                      (pl) =>
+                                          pl?.packageName == parentPackageName,
+                                      orElse: () => null,
+                                    );
+
+                          final String? iconUrl;
+                          final String? extensionName;
                           if (cloudStream != null) {
-                            pluginTag = cloudStream.pluginName;
-                          } else if (isSubprovider) {
-                            final parentPackageName = p.packageName.substring(
-                              0,
-                              p.packageName.indexOf('::'),
-                            );
-                            final plugin = installedPlugins
-                                .cast<ExtensionPlugin?>()
-                                .firstWhere(
-                                  (pl) => pl?.packageName == parentPackageName,
-                                  orElse: () => null,
-                                );
-                            pluginTag = plugin?.name ?? parentPackageName;
+                            iconUrl = cloudStream.plugin.info.iconUrl;
+                            extensionName = cloudStream.pluginName;
+                          } else {
+                            iconUrl = plugin?.iconUrl;
+                            extensionName =
+                                plugin?.name ??
+                                (sep == -1 ? null : parentPackageName);
                           }
 
-                          return SizedBox(
-                            height: 56.0,
-                            child: Center(
-                              child: ListTile(
-                                autofocus: index == targetIndex,
-                                title: Row(
-                                  children: [
-                                    Flexible(
-                                      child: Text(
-                                        p.name,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (isSubprovider) ...[
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        constraints: const BoxConstraints(
-                                          maxWidth: 120,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Theme.of(context)
-                                              .colorScheme
-                                              .secondaryContainer,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          pluginTag,
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSecondaryContainer,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                    if (cloudStream != null) ...[
-                                      const SizedBox(width: 8),
-                                      const CloudStreamBadge(),
-                                    ],
-                                    if (isDebug) ...[
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.red,
-                                          borderRadius: BorderRadius.circular(
-                                            4,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          l10n.debug,
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                leading: Radio<String?>(value: p.packageName),
-                                onTap: () {
-                                  ref
-                                      .read(activeProviderProvider.notifier)
-                                      .set(p);
-                                  Navigator.pop(context);
-                                  ref.invalidate(homeDataProvider);
-                                },
-                              ),
-                            ),
+                          // Name the extension when it says something the
+                          // provider's own name does not.
+                          final subtitleParts = [
+                            if (extensionName != null &&
+                                extensionName.trim().isNotEmpty &&
+                                extensionName.trim().toLowerCase() !=
+                                    p.name.trim().toLowerCase())
+                              extensionName.trim(),
+                            if (cloudStream != null) l10n.cloudStream,
+                          ];
+
+                          final isSelected =
+                              activeProvider?.packageName == p.packageName;
+                          return _buildRow(
+                            context,
+                            leading: PluginLogo(url: iconUrl, name: p.name),
+                            title: p.name,
+                            subtitle: subtitleParts.isEmpty
+                                ? null
+                                : subtitleParts.join(' · '),
+                            isDebug: p.isDebug,
+                            selected: isSelected,
+                            autofocus: index == targetIndex,
+                            onTap: () => _select(ref, p),
                           );
                         },
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ],

@@ -2397,4 +2397,12 @@ class AppLocalizationsJa extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'ライブから $time 遅れ';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

@@ -12,6 +12,7 @@ import '../../../core/utils/layout_constants.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../shared/widgets/custom_widgets.dart';
 import '../../../shared/widgets/loading_indicator.dart';
+import '../../../shared/widgets/plugin_logo.dart';
 import '../../../shared/widgets/text_input_dialog.dart';
 import 'extension_ui/extension_settings_flow.dart';
 
@@ -453,7 +454,7 @@ class _PluginTile extends ConsumerWidget {
 
     return ListTile(
       key: ValueKey('cs3_plugin_${CloudStreamRepository.keyOf(info)}'),
-      leading: _PluginIcon(url: info.iconUrl, name: info.name),
+      leading: PluginLogo(url: info.iconUrl, name: info.name),
       title: Row(
         children: [
           Flexible(child: Text(info.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
@@ -579,41 +580,6 @@ class _PluginTile extends ConsumerWidget {
 
   static String _size(int bytes) =>
       bytes >= 1024 * 1024 ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB' : '${(bytes / 1024).ceil()} KB';
-}
-
-class _PluginIcon extends StatelessWidget {
-  const _PluginIcon({required this.url, required this.name});
-
-  final String? url;
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final fallback = Container(
-      width: 40,
-      height: 40,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(color: cs.primaryContainer.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10)),
-      child: Text(
-        name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(),
-        style: Theme.of(context).textTheme.titleSmall?.copyWith(color: cs.primary, fontWeight: FontWeight.bold),
-      ),
-    );
-    final icon = url;
-    if (icon == null || icon.isEmpty) return fallback;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.network(
-        icon,
-        width: 40,
-        height: 40,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => fallback,
-        loadingBuilder: (context, child, progress) => progress == null ? child : fallback,
-      ),
-    );
-  }
 }
 
 class _Chip extends StatelessWidget {

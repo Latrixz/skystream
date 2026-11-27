@@ -2432,4 +2432,12 @@ class AppLocalizationsId extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time di belakang siaran langsung';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

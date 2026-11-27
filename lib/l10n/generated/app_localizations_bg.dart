@@ -2422,4 +2422,12 @@ class AppLocalizationsBg extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time зад живото предаване';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

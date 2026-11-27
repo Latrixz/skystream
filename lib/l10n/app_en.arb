@@ -1877,5 +1877,9 @@
   "@devQoeLog": {"description": "Developer options: the switch that writes playback-quality (QoE) events to the app log. \"QoE\" stays as it is."},
   "@devQoeLogSubtitle": {"description": "Developer options: the line under the QoE log switch."},
   "@playerGoLive": {"description": "Player, live stream: the button that jumps back to the live edge."},
-  "@playerBehindLive": {"description": "Player, live stream: spoken label for how far behind the live edge playback is, such as \"0:42 behind live\".", "placeholders": {"time": {"type": "String", "example": "0:42"}}}
+  "@playerBehindLive": {"description": "Player, live stream: spoken label for how far behind the live edge playback is, such as \"0:42 behind live\".", "placeholders": {"time": {"type": "String", "example": "0:42"}}},
+  "providerSelectorSearchHint": "Search providers…",
+  "providerSelectorNoMatch": "No provider matches \"{query}\".",
+  "@providerSelectorSearchHint": {"description": "Select Provider dialog on Home: hint in the search field that filters the provider list by name."},
+  "@providerSelectorNoMatch": {"description": "Select Provider dialog on Home: shown instead of the list when the search (and category chip) leave no provider.", "placeholders": {"query": {"type": "String", "example": "netflix"}}}
 }

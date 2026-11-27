@@ -2441,4 +2441,12 @@ class AppLocalizationsKn extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'ಲೈವ್‌ಗಿಂತ $time ಹಿಂದೆ';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'ಪ್ರೊವೈಡರ್ ಹುಡುಕಿ…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return '\"$query\" ಗೆ ಹೊಂದುವ ಯಾವುದೇ ಪ್ರೊವೈಡರ್ ಇಲ್ಲ.';
+  }
 }

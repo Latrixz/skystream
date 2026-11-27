@@ -2439,6 +2439,14 @@ class AppLocalizationsAr extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'متأخر $time عن البث المباشر';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }
 
 /// The translations for Arabic (`ar_apc`).

@@ -2411,4 +2411,12 @@ class AppLocalizationsVi extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'Chậm $time so với trực tiếp';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

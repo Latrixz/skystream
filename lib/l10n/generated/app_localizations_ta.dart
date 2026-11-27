@@ -2442,4 +2442,12 @@ class AppLocalizationsTa extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'நேரலையை விட $time பின்னால்';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }

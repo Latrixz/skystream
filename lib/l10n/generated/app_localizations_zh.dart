@@ -2382,6 +2382,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String playerBehindLive(String time) {
     return '落后直播 $time';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).

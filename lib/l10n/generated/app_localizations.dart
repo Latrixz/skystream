@@ -4247,6 +4247,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{time} behind live'**
   String playerBehindLive(String time);
+
+  /// Select Provider dialog on Home: hint in the search field that filters the provider list by name.
+  ///
+  /// In en, this message translates to:
+  /// **'Search providers…'**
+  String get providerSelectorSearchHint;
+
+  /// Select Provider dialog on Home: shown instead of the list when the search (and category chip) leave no provider.
+  ///
+  /// In en, this message translates to:
+  /// **'No provider matches \"{query}\".'**
+  String providerSelectorNoMatch(String query);
 }
 
 class _AppLocalizationsDelegate

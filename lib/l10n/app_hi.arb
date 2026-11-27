@@ -659,5 +659,7 @@
   "devQoeLog": "QoE लॉग",
   "devQoeLogSubtitle": "प्लेबैक के समय ऐप लॉग में लिखता है",
   "playerGoLive": "लाइव पर जाएँ",
-  "playerBehindLive": "लाइव से {time} पीछे"
+  "playerBehindLive": "लाइव से {time} पीछे",
+  "providerSelectorSearchHint": "प्रदाता खोजें…",
+  "providerSelectorNoMatch": "\"{query}\" से कोई प्रदाता मेल नहीं खाता।"
 }

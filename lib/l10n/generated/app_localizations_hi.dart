@@ -2428,4 +2428,12 @@ class AppLocalizationsHi extends AppLocalizations {
   String playerBehindLive(String time) {
     return 'लाइव से $time पीछे';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'प्रदाता खोजें…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return '\"$query\" से कोई प्रदाता मेल नहीं खाता।';
+  }
 }

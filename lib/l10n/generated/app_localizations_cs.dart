@@ -2432,4 +2432,12 @@ class AppLocalizationsCs extends AppLocalizations {
   String playerBehindLive(String time) {
     return '$time za živým vysíláním';
   }
+
+  @override
+  String get providerSelectorSearchHint => 'Search providers…';
+
+  @override
+  String providerSelectorNoMatch(String query) {
+    return 'No provider matches \"$query\".';
+  }
 }
