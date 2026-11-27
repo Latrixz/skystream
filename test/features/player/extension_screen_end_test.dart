@@ -45,6 +45,8 @@ class _Game implements SkyStreamProvider {
   @override
   Future<List<MultimediaItem>> search(String query, {CancelToken? cancelToken}) async => const [];
   @override
+  Future<SearchPage?> searchPage(String query, int page, {CancelToken? cancelToken}) async => null;
+  @override
   Future<Map<String, List<MultimediaItem>>> getHome() async => const {};
   @override
   Future<MultimediaItem> getDetails(String url) async => throw UnimplementedError();

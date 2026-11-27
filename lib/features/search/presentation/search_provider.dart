@@ -16,6 +16,7 @@ import '../../../../core/network/clearance/site_checks.dart';
 import '../../../../core/nuvio/data/nuvio_repository.dart';
 import '../../explore/data/explore_tmdb_provider.dart';
 import '../domain/search_fold.dart';
+import 'search_pager.dart';
 import 'search_sources.dart';
 
 part 'search_provider.g.dart';
@@ -35,6 +36,10 @@ class ProviderSearchResult {
   /// extension's, which open on the details page.
   final SearchSource? source;
 
+  /// The section's next pages, when its provider has some; its list is then
+  /// the pager's, [results] its first page.
+  final SearchPager? pager;
+
   ProviderSearchResult({
     required this.providerId,
     required this.providerName,
@@ -42,6 +47,7 @@ class ProviderSearchResult {
     this.error,
     SearchSourceKind? kind,
     this.source,
+    this.pager,
   }) : kind =
            kind ??
            source?.kind ??
@@ -426,6 +432,15 @@ Stream<SearchAggregateState> searchAllProviders(
   final queue = List<SkyStreamProvider>.from(sortedProviders);
   final List<CancelToken> activeTokens = [];
   final List<SkyStreamProvider> activeProviders = [];
+
+  /// The sections' pagers: they page on after the search has ended, until a
+  /// newer search takes its place.
+  final List<SearchPager> pagers = [];
+  ref.onDispose(() {
+    for (final pager in pagers) {
+      pager.cancel();
+    }
+  });
   bool isCompleted = false;
   StreamSubscription<void>? cleared;
 
@@ -524,7 +539,16 @@ Stream<SearchAggregateState> searchAllProviders(
 
         try {
           debugPrint('[SEARCH DBG] START ${provider.packageName}');
-          final rawResults = await provider.search(query, cancelToken: token);
+          // Page 1 of a provider that pages, for whether more follow.
+          final firstPage = await provider.searchPage(
+            query,
+            1,
+            cancelToken: token,
+          );
+          if (isCancelled() || token.isCancelled) return;
+          final rawResults =
+              firstPage?.items ??
+              await provider.search(query, cancelToken: token);
           debugPrint(
             '[SEARCH DBG] DONE ${provider.packageName} — rawResults=${rawResults.length}',
           );
@@ -540,37 +564,39 @@ Stream<SearchAggregateState> searchAllProviders(
               : null;
           // A searcher's results keep their own fields (ids, kind, source):
           // they open in their own system's pages.
-          final providerItems = source != null
-              ? rawResults
-              : rawResults
-                    .map(
-                      (item) => MultimediaItem(
-                        title: item.title,
-                        url: item.url,
-                        posterUrl: item.posterUrl,
-                        bannerUrl: item.bannerUrl,
-                        description: item.description,
-                        contentType: item.contentType,
-                        episodes: item.episodes,
-                        provider: provider.packageName,
-                      ),
-                    )
-                    .toList();
+          // A page's items as the section lists them; the next pages' too.
+          Future<List<MultimediaItem>> prepare(List<MultimediaItem> raw) async {
+            // A searcher's results are matched and ranked by its own system
+            // (TMDB, the add-on): accents, years and people included.
+            if (source != null) return raw;
+            final providerItems = raw
+                .map(
+                  (item) => MultimediaItem(
+                    title: item.title,
+                    url: item.url,
+                    posterUrl: item.posterUrl,
+                    bannerUrl: item.bannerUrl,
+                    description: item.description,
+                    contentType: item.contentType,
+                    episodes: item.episodes,
+                    provider: provider.packageName,
+                  ),
+                )
+                .toList();
+            // For small result sets, skip the compute() isolate overhead
+            // (spawn + serialize + deserialize costs more than the filter
+            // work).
+            return providerItems.length < 30
+                ? _filterItems(_FilterParams(providerItems, queryParts))
+                : await compute(
+                    _filterItems,
+                    _FilterParams(providerItems, queryParts),
+                  );
+          }
 
-          // For small result sets, skip the compute() isolate overhead
-          // (spawn + serialize + deserialize costs more than the filter work).
-          // A searcher's results are matched and ranked by its own system
-          // (TMDB, the add-on): accents, years and people included.
-          final filtered = source != null
-              ? providerItems
-              : providerItems.length < 30
-              ? _filterItems(_FilterParams(providerItems, queryParts))
-              : await compute(
-                  _filterItems,
-                  _FilterParams(providerItems, queryParts),
-                );
+          final filtered = await prepare(rawResults);
           debugPrint(
-            '[SEARCH DBG] FILTERED ${provider.packageName} — ${filtered.length}/${providerItems.length} items',
+            '[SEARCH DBG] FILTERED ${provider.packageName} — ${filtered.length}/${rawResults.length} items',
           );
 
           if (isCancelled() || token.isCancelled) {
@@ -585,14 +611,29 @@ Stream<SearchAggregateState> searchAllProviders(
           // cause needless ListView rebuilds for no visual change.
           if (filtered.isNotEmpty) {
             // A search again replaces what the extension found before.
+            for (final r in results) {
+              if (r.providerId == provider.packageName) r.pager?.cancel();
+            }
             results.removeWhere((r) => r.providerId == provider.packageName);
             empty.remove(provider.packageName);
+            final pager = firstPage != null && firstPage.hasNext
+                ? SearchPager(
+                    provider: provider,
+                    query: query,
+                    firstPage: filtered,
+                    hasNext: true,
+                    seen: rawResults.map((item) => item.url),
+                    prepare: prepare,
+                  )
+                : null;
+            if (pager != null) pagers.add(pager);
             results.add(
               ProviderSearchResult(
                 providerId: provider.packageName,
                 providerName: provider.name,
                 results: filtered,
                 source: source,
+                pager: pager,
               ),
             );
             debugPrint(

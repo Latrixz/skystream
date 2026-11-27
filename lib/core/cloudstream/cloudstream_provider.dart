@@ -87,12 +87,30 @@ class CloudStreamProvider extends SkyStreamProvider {
   @override
   Future<List<MultimediaItem>> search(String query, {CancelToken? cancelToken}) async {
     try {
-      final result = await _call((e) => e.search(name, query, plugin: _pluginPath), kind: 'search');
-      return [for (final item in _list(result['items'])) _item(item)];
+      return (await _searchPage(query, 1)).items;
     } catch (error) {
       talker.warning('[CloudStream] $name search failed: $error');
       return const [];
     }
+  }
+
+  @override
+  Future<SearchPage?> searchPage(String query, int page, {CancelToken? cancelToken}) async {
+    try {
+      return await _searchPage(query, page);
+    } catch (error) {
+      talker.warning('[CloudStream] $name search page $page failed: $error');
+      rethrow;
+    }
+  }
+
+  /// Page [page] of the extension's results for [query], with its hasNext.
+  Future<SearchPage> _searchPage(String query, int page) async {
+    final result = await _call((e) => e.search(name, query, page: page, plugin: _pluginPath), kind: 'search');
+    return SearchPage(
+      items: [for (final item in _list(result['items'])) _item(item)],
+      hasNext: result['hasNext'] == true,
+    );
   }
 
   @override

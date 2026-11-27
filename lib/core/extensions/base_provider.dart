@@ -28,12 +28,30 @@ abstract class SkyStreamProvider {
 
   // Key methods providers must implement
   Future<List<MultimediaItem>> search(String query, {CancelToken? cancelToken});
+
+  /// Page [page] (1-based) of this provider's results for [query], for an
+  /// endless list of them. Null when this provider can't page its search:
+  /// callers then use [search], and show only its one list.
+  Future<SearchPage?> searchPage(
+    String query,
+    int page, {
+    CancelToken? cancelToken,
+  }) async => null;
   // Returns categorized content (Section Name -> Items)
   Future<Map<String, List<MultimediaItem>>> getHome();
   Future<MultimediaItem> getDetails(String url);
 
   // Returns list of video streams (urls)
   Future<List<StreamResult>> loadStreams(String url);
+}
+
+/// One page of a provider's search results: its items, and whether a page
+/// follows.
+class SearchPage {
+  const SearchPage({required this.items, required this.hasNext});
+
+  final List<MultimediaItem> items;
+  final bool hasNext;
 }
 
 /// A provider's own full-screen screen (a game an extension opens on Play) took the person's Play and left nothing to

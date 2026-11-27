@@ -68,6 +68,46 @@ void main() {
     expect(CloudStreamProvider.isCloudStreamId(null), isFalse);
   });
 
+  group('search pages', () {
+    late _SearchEngine engine;
+
+    CloudStreamProvider provider() => CloudStreamProvider(
+      plugin: const CsInstalledPlugin(
+        info: CsPluginInfo(internalName: 'Paged', name: 'Paged', url: '', repositoryUrl: ''),
+        filePath: '/plugins/Paged.cs3',
+      ),
+      pluginKey: 'repo/Paged',
+      info: const CsProviderInfo(name: 'Paged'),
+      host: _SearchHost(engine),
+    );
+
+    setUp(() => engine = _SearchEngine());
+
+    test("page N is the extension's page N, with its hasNext", () async {
+      final paged = provider();
+      final first = await paged.searchPage('love', 1);
+      expect(first!.items.map((i) => i.url), ['/love/1']);
+      expect(first.items.single.provider, paged.packageName);
+      expect(first.hasNext, isTrue);
+
+      final last = await paged.searchPage('love', 3);
+      expect(last!.items.map((i) => i.url), ['/love/3']);
+      expect(last.hasNext, isFalse);
+      expect(engine.asked, [(query: 'love', page: 1, plugin: '/plugins/Paged.cs3'), (query: 'love', page: 3, plugin: '/plugins/Paged.cs3')]);
+    });
+
+    test('search is page 1', () async {
+      expect((await provider().search('love')).map((i) => i.url), ['/love/1']);
+      expect(engine.asked.single.page, 1);
+    });
+
+    test("a page's failure is its error; search's is no results", () async {
+      engine.failing = true;
+      await expectLater(provider().searchPage('love', 2), throwsA(isA<Exception>()));
+      expect(await provider().search('love'), isEmpty);
+    });
+  });
+
   group("a Play an extension's full-screen window took", () {
     CloudStreamProvider provider(Map<String, dynamic> answer) => CloudStreamProvider(
       plugin: const CsInstalledPlugin(
@@ -302,6 +342,45 @@ void main() {
       expect(map({...anime(), 'syncIds': {'imdb': '22248376'}}).imdbId, isNull);
     });
   });
+}
+
+/// A host that runs each search on [running].
+class _SearchHost extends CloudStreamEngineHost {
+  _SearchHost(this.running);
+
+  final Cs3Engine running;
+
+  @override
+  Future<T> run<T>(
+    String path,
+    Future<T> Function(Cs3Engine engine) call, {
+    String kind = 'call',
+    String? provider,
+    String mainUrl = '',
+    String? pluginUrl,
+  }) => call(running);
+}
+
+/// An extension whose search has three pages, a title each.
+class _SearchEngine implements Cs3Engine {
+  final asked = <({String query, int page, String? plugin})>[];
+
+  bool failing = false;
+
+  @override
+  Future<Map<String, dynamic>> search(String provider, String query, {int page = 1, String? plugin}) async {
+    asked.add((query: query, page: page, plugin: plugin));
+    if (failing) throw Exception('offline');
+    return {
+      'items': [
+        {'name': '$query $page', 'url': '/$query/$page', 'type': 'Movie'},
+      ],
+      'hasNext': page < 3,
+    };
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 /// An engine host whose every call answers [answer].

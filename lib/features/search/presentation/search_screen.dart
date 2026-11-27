@@ -662,6 +662,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 results: pResult.results,
                 kind: pResult.kind,
                 source: pResult.source,
+                pager: pResult.pager,
                 firstCardFocusNode: index == 0 ? _firstResultFocusNode : null,
               );
             },

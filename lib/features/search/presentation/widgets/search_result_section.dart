@@ -10,9 +10,13 @@ import 'package:skystream/core/extensions/extension_manager.dart';
 import 'package:skystream/core/domain/entity/multimedia_item.dart';
 import 'package:skystream/core/router/app_router.dart';
 import 'package:skystream/core/utils/image_fallbacks.dart';
+import 'package:skystream/l10n/generated/app_localizations.dart';
+import 'package:skystream/shared/widgets/cards_wrapper.dart';
 import 'package:skystream/shared/widgets/desktop_scroll_wrapper.dart';
+import 'package:skystream/shared/widgets/loading_indicator.dart';
 import 'package:skystream/shared/widgets/multimedia_card.dart';
 
+import '../search_pager.dart';
 import '../search_sources.dart';
 import 'search_source_tag.dart';
 import 'stamp_in_label.dart';
@@ -31,6 +35,10 @@ class SearchResultSection extends ConsumerStatefulWidget {
   /// they open on the details page.
   final SearchSource? source;
 
+  /// The provider's next pages: the row then lists the pager's items, and
+  /// ends in a Show More card while more may follow.
+  final SearchPager? pager;
+
   SearchResultSection({
     super.key,
     required this.providerName,
@@ -39,6 +47,7 @@ class SearchResultSection extends ConsumerStatefulWidget {
     this.firstCardFocusNode,
     SearchSourceKind? kind,
     this.source,
+    this.pager,
   }) : kind =
            kind ??
            (CloudStreamBadge.isCloudStream(providerId)
@@ -53,15 +62,87 @@ class SearchResultSection extends ConsumerStatefulWidget {
 class _SearchResultSectionState extends ConsumerState<SearchResultSection> {
   final ScrollController _scrollController = ScrollController();
 
+  /// The Show More card's.
+  final FocusNode _moreFocusNode = FocusNode(debugLabel: 'search-show-more');
+
+  /// The card focus goes to once a page it was waiting on at Show More has
+  /// come: the page's first, or the row's last when it brought none.
+  final FocusNode _landingFocusNode = FocusNode(debugLabel: 'search-landing');
+  int? _landingIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    widget.pager?.addListener(_onPage);
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchResultSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.pager, widget.pager)) {
+      oldWidget.pager?.removeListener(_onPage);
+      widget.pager?.addListener(_onPage);
+      _landingIndex = null;
+    }
+  }
+
   @override
   void dispose() {
+    // The pager stays the search's: the row, scrolled back into the list,
+    // shows its pages again.
+    widget.pager?.removeListener(_onPage);
     _scrollController.dispose();
+    _moreFocusNode.dispose();
+    _landingFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onPage() {
+    if (mounted) setState(() {});
+  }
+
+  /// Near the row's end, its next page: scrolling, or walking the cards with
+  /// the D-pad, runs on into it.
+  void _onScroll() {
+    final pager = widget.pager;
+    if (pager == null || !pager.hasMore || pager.isLoading) return;
+    final position = _scrollController.position;
+    if (position.extentAfter < position.viewportDimension / 2) {
+      unawaited(_loadMore());
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final pager = widget.pager;
+    if (pager == null) return;
+    final before = pager.items.length;
+    await pager.loadMore();
+    if (!mounted || !identical(pager, widget.pager)) return;
+    // A row still short of its end (the page's titles didn't match the
+    // query) asks on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _scrollController.hasClients) _onScroll();
+    });
+    // Focus waiting at Show More goes on to what the page brought.
+    if (!_moreFocusNode.hasFocus) return;
+    final count = pager.items.length;
+    if (count > before || !pager.hasMore) {
+      setState(() => _landingIndex = count > before ? before : count - 1);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _landingFocusNode.context != null) {
+          _landingFocusNode.requestFocus();
+        }
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.results.isEmpty) return const SizedBox.shrink();
+    final pager = widget.pager;
+    final items = pager?.items ?? widget.results;
+    if (items.isEmpty) return const SizedBox.shrink();
+    final showMore = pager != null && (pager.hasMore || pager.isLoading);
 
     final isLarge = context.isTabletOrLarger;
     // Matching MediaHorizontalList/ContinueWatchingSection dimensions
@@ -130,11 +211,21 @@ class _SearchResultSectionState extends ConsumerState<SearchResultSection> {
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   scrollDirection: Axis.horizontal,
-                  itemCount: widget.results.length,
+                  itemCount: items.length + (showMore ? 1 : 0),
                   itemExtent: cardWidth + spacing,
                   clipBehavior: Clip.none,
                   itemBuilder: (context, rIndex) {
-                    final item = widget.results[rIndex];
+                    if (rIndex >= items.length) {
+                      return Padding(
+                        padding: EdgeInsets.only(right: spacing),
+                        child: _ShowMoreCard(
+                          focusNode: _moreFocusNode,
+                          isLoading: pager!.isLoading,
+                          onTap: () => unawaited(_loadMore()),
+                        ),
+                      );
+                    }
+                    final item = items[rIndex];
                     final uniqueTag =
                         'search_${widget.providerId}_${item.url}_$rIndex';
 
@@ -152,6 +243,8 @@ class _SearchResultSectionState extends ConsumerState<SearchResultSection> {
                           heroTag: uniqueTag,
                           focusNode: rIndex == 0
                               ? widget.firstCardFocusNode
+                              : rIndex == _landingIndex
+                              ? _landingFocusNode
                               : null,
                           onTap: () {
                             final source = widget.source;
@@ -207,6 +300,63 @@ class _SearchResultSectionState extends ConsumerState<SearchResultSection> {
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The end of a row with more pages: asks for the next, and shows it coming.
+/// Focusable like the cards, so the D-pad and Tab reach it.
+class _ShowMoreCard extends StatelessWidget {
+  const _ShowMoreCard({
+    required this.focusNode,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  final FocusNode focusNode;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final label = AppLocalizations.of(context)!.showMore;
+    return Semantics(
+      button: true,
+      label: label,
+      child: CardsWrapper(
+        focusNode: focusNode,
+        scaleFactor: 1.05,
+        onTap: isLoading ? () {} : onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          alignment: Alignment.center,
+          child: isLoading
+              ? const AppLoadingIndicator()
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_forward_rounded,
+                      size: 32,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
         ),
       ),
     );

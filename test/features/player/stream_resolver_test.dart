@@ -73,6 +73,12 @@ class FakePlugin implements SkyStreamProvider {
     CancelToken? cancelToken,
   }) async => const [];
   @override
+  Future<SearchPage?> searchPage(
+    String query,
+    int page, {
+    CancelToken? cancelToken,
+  }) async => null;
+  @override
   Future<Map<String, List<MultimediaItem>>> getHome() async => const {};
   @override
   Future<MultimediaItem> getDetails(String url) async =>

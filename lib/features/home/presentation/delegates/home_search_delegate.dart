@@ -9,6 +9,7 @@ import '../../../../core/extensions/extension_manager.dart';
 import '../../../../core/extensions/base_provider.dart';
 import '../../../../core/utils/image_fallbacks.dart';
 import '../../../search/presentation/search_history_provider.dart';
+import '../../../search/presentation/search_pager.dart';
 import '../../../search/presentation/search_provider.dart';
 import '../../../search/presentation/widgets/search_suggestion_row.dart';
 import '../../../../shared/focus/text_field_keys.dart';
@@ -18,6 +19,7 @@ import 'package:skystream/shared/widgets/multimedia_card.dart';
 import '../../../../core/network/clearance/clearance.dart';
 import '../../../../shared/widgets/check_line.dart';
 import '../../../../shared/widgets/loading_indicator.dart';
+import '../../../../shared/widgets/shimmer_placeholder.dart';
 import '../../../../core/utils/responsive_breakpoints.dart';
 
 /// Opens Home's search over [context], and disposes its delegate once the
@@ -314,6 +316,15 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
   bool isLoading = true;
   ProviderSearchResult? result;
 
+  /// The results' pages: the grid runs on into the next as it nears its end.
+  SearchPager? _pager;
+
+  final ScrollController _scrollController = ScrollController();
+
+  /// Counts searches, so a query's answer that comes after the next query
+  /// went out is dropped.
+  int _searches = 0;
+
   /// When the search went out: a bot check its plugin met since is the one
   /// the spinner, or the empty results, stand over. The search gives up on a
   /// check that wants a person after the automatic try, so the empty results
@@ -323,6 +334,7 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _performSearch();
   }
 
@@ -332,6 +344,39 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
     if (oldWidget.query != widget.query) {
       _performSearch();
     }
+  }
+
+  @override
+  void dispose() {
+    _pager?.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onPage() {
+    if (mounted) setState(() {});
+  }
+
+  /// Near the grid's end, its next page.
+  void _onScroll() {
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 200) _loadMore();
+  }
+
+  /// The next page, and on until the grid fills its screen: a grid that
+  /// doesn't scroll would never ask.
+  void _loadMore() {
+    final pager = _pager;
+    if (pager == null || !pager.hasMore || pager.isLoading) return;
+    pager.loadMore().then((_) {
+      if (!mounted || !identical(pager, _pager)) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkFill());
+    });
+  }
+
+  void _checkFill() {
+    if (!mounted || !_scrollController.hasClients) return;
+    if (_scrollController.position.maxScrollExtent <= 0) _loadMore();
   }
 
   Future<void> _performSearch() async {
@@ -344,6 +389,9 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
     unawaited(Future.microtask(() => history.add(query)));
 
     final clearance = Clearance.instance;
+    final search = ++_searches;
+    _pager?.dispose();
+    _pager = null;
     setState(() {
       isLoading = true;
       result = null;
@@ -357,19 +405,30 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
     }
 
     try {
-      final rawResults = await provider.search(widget.query);
-      if (mounted) {
+      // Page 1 of a provider that pages, for whether more follow.
+      final firstPage = await provider.searchPage(query, 1);
+      final rawResults = firstPage?.items ?? await provider.search(query);
+      if (mounted && search == _searches) {
+        final pager = SearchPager(
+          provider: provider,
+          query: query,
+          firstPage: rawResults.toList(),
+          hasNext: firstPage?.hasNext ?? false,
+        )..addListener(_onPage);
         setState(() {
           isLoading = false;
+          _pager = pager;
           result = ProviderSearchResult(
             providerId: provider.packageName,
             providerName: provider.name,
             results: rawResults.toList(),
+            pager: pager,
           );
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _checkFill());
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && search == _searches) {
         setState(() {
           isLoading = false;
         });
@@ -441,10 +500,17 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
       );
     }
 
-    final isLarge = MediaQuery.of(context).size.width > 600;
+    final width = MediaQuery.of(context).size.width;
+    final isLarge = width > 600;
     final maxExtent = isLarge ? 200.0 : 130.0;
+    final items = _pager?.items ?? result!.results;
+    // A row of placeholders where the next page is coming.
+    final placeholders = (_pager?.isLoading ?? false)
+        ? (width / maxExtent).ceil()
+        : 0;
 
     return GridView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.all(16),
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: maxExtent,
@@ -452,9 +518,12 @@ class _HomeSearchResultsState extends ConsumerState<_HomeSearchResults> {
         crossAxisSpacing: 12,
         mainAxisSpacing: 16,
       ),
-      itemCount: result!.results.length,
+      itemCount: items.length + placeholders,
       itemBuilder: (context, index) {
-        final item = result!.results[index];
+        if (index >= items.length) {
+          return ShimmerPlaceholder(borderRadius: 12);
+        }
+        final item = items[index];
         final uniqueTag = 'search_${result!.providerId}_${item.url}_$index';
 
         return MultimediaCard(
